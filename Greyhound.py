@@ -23,7 +23,7 @@ if not WEBHOOK_URL:
     raise ValueError("WEBHOOK_URL environment variable is required")
 
 # Data directory (Railway volume mount recommended: /data)
-DATA_DIR = os.getenv('DATA_DIR', '/data')  # Default to /data for Railway
+DATA_DIR = os.getenv('DATA_DIR', '/tmp/data')  # Default to /tmp/data for Railway
 
 # Learning system files (within DATA_DIR)
 LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
@@ -76,7 +76,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # Define grounding tool for REAL web search
 grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
-# Configure generation with deep thinking AND real web search
+# Configure generation with deep thinking AND real web search (like working horse bot)
 generation_config = types.GenerateContentConfig(
     tools=[grounding_tool],  # Enable real-time web search
     thinking_config=types.ThinkingConfig(
@@ -171,7 +171,7 @@ async def generate_greyhound_tips():
     target_date_search = perth_now.strftime("%Y-%m-%d")
     current_time_perth = perth_now.strftime("%H:%M AWST")
     
-    print(f"Generating greyhound tips for {target_date_str} at {current_time_perth}")
+    print(f"Generating fresh greyhound tips for {target_date_str} at {current_time_perth}")
     print(f"DEBUG: Perth date: {target_date_search}, Perth time: {current_time_perth}")
     
     # Get learning insights
@@ -343,7 +343,6 @@ async def analyze_prediction_accuracy(predictions_data, results_content):
     return f"📈 Accuracy: {correct_predictions}/{total_predictions} ({pct:.1f}%) | Overall win rate: {learning_data['win_rate']:.1f}%\n" + "\n".join(analysis_summary)
 
 def has_strong_bets(tips_content):
-    """Check if the tips content contains any strong greyhound selections"""
     # Look for strong bet indicators in the response
     strong_bet_indicators = [
         "STRONG SELECTIONS",
@@ -398,124 +397,160 @@ def extract_summary(tips_content):
         return "❌ No qualifying greyhound selections found for this day."
 
 async def analyze_greyhound_racing_day(target_date_str, target_date_search, current_time_perth, learning_insights):
-    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis"""
+    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis - using successful horse bot approach"""
     
-    # Enhanced prompt with MANDATORY web search for REAL greyhound data, today only
-    main_prompt = f"""🌐 LIVE WEB SEARCH REQUIRED - REAL AUSTRALIAN GREYHOUND RACING DATA
+    # Enhanced prompt with MANDATORY web search for REAL greyhound data, today only - based on working horse bot
+    main_prompt = f"""🌐 LIVE WEB SEARCH REQUIRED - REAL AUSTRALIAN GREYHOUND RACING DATA (TODAY ONLY)
 
-SYSTEM DATE CONFIRMATION: Today is SUNDAY, {target_date_str} ({target_date_search})
-CURRENT PERTH TIME: {current_time_perth} (AWST)
-DAY OF WEEK: SUNDAY
-
-CRITICAL INSTRUCTION: You are analyzing greyhound races happening TODAY - SUNDAY {target_date_str} ({target_date_search}). This is NOT Monday or any other day - this is SUNDAY TODAY.
-
-IMPORTANT: Search ONLY for greyhound race meetings scheduled for SUNDAY {target_date_search}. Do NOT include Monday races or any other day's races.
-
-If there are NO greyhound races scheduled for today (Sunday), clearly state: "No greyhound races are scheduled for Sunday, {target_date_str}. The next available races are on [DATE]."
-
-If races ARE found for today (Sunday), proceed with the analysis.
+Current Time: {current_time_perth} (Perth/AWST)
+Target Analysis: today's greyhound races for {target_date_str} ONLY
 
 {learning_insights}
 
-Generate the five best Australian greyhound racing tips for TODAY SUNDAY ({target_date_str}), you must draw on every publicly available piece of information for every licensed track in Australia, and apply a thorough, expert-level "deep analysis" to each candidate dog. Your process should include, but not be limited to, the following expanded checklist:
+You MUST use your web search capabilities to find REAL greyhound racing information for TODAY ({target_date_str}).
 
-⸻
-1. Comprehensive Track & Conditions Intelligence
-• All Australian Tracks: Include data from every current meeting in NSW, VIC, QLD, WA, SA, TAS, NT and ACT. Pull the official racecards and track condition reports for each track (e.g., TheDogs.com.au, Racing Australia, state bodies).
-• Track Configuration: Note each track's shape (circle vs. one-turn vs. two-turn), straight-away lengths, chute designs, and floodlighting.
-• Surface & Weather: Record today's going ("Good," "Fast," "Slow," "Heavy" etc.), temperature, wind, rainfall and humidity—factors that alter ground speed, particularly at Tuggeranong, Hobart and Sandown.
+MANDATORY COMPREHENSIVE WEB SEARCHES TO PERFORM:
 
-2. In-Depth Greyhound Form Profiling
-• Recent Performance: For each greyhound, compile its last 3–5 starts nationally, including finish position, winning margin, interference notes, grade of race, and whether it was first-up or second-up after a spell.
-• Personal Best Times: Compare each dog's fastest recorded time at today's trip at that exact track against every other runner. Highlight any raw time advantage of 0.20s or more.
-• Early Speed Metrics: Aggregate each dog's average first-section time ("1st Sec") at the relevant distance and surface condition. Identify outliers who consistently fire out fastest.
-• Box-Draw Compatibility: Cross-reference each dog's career box-section splits (e.g., "PB(1), PB(2)…"), its preferred running style (rails, mid-track, wide) and today's barrier draw.
-• Running Style Classification: Tag each runner as a "box-to-box leader," "pace presser," "clear-running finisher," or "strong last-200m kicker," then map that style to the expected race tempo.
-• Class Movement Analysis: Note any dog dropping in class (easier fields) or stepping up (tougher competition) relative to its last few starts, flagging opportunities in Grade 5–FFA transitions.
-• Trainer & Kennel Form: Pull the last 14 days of winners, placings and strikes for each trainer represented tonight, nationally. Weight trainers by metropolitan vs. country form.
-• Spell & Fitness Check: For dogs resuming after a spell, inspect their first-up performances historically; adjust weightings for known "second-up peak" types.
-• Physical Condition & Veterinary Alerts: Incorporate any publicly announced vet inspections, pawing issues, vet scratches, or late withdrawals.
+📊 GREYHOUND RACE CARDS & BASIC DATA:
+1. Search: "Australian greyhound racing {target_date_search} race cards TheDogs.com.au"
+2. Search: "Wentworth Park Sandown Cannington Angle Park {target_date_str} greyhound meetings"
+3. Search: "NSW VIC QLD SA WA greyhound racing {target_date_str} full cards"
+4. Search: "TheDogs.com.au {target_date_search} complete greyhound race cards"
+5. Search: "TAB greyhound racing Australia {target_date_str} all meetings times boxes"
 
-3. Race Dynamics & Tactical Mapping
-• Speedmap Construction: For each race, generate a sectional-based speed map showing likely leaders, challengers and back-markers. Use average '1st Sec' and box-section data to model the first 50 m.
-• Pace Scenario Forecast: Classify the race as "fast" (multiple speed dogs), "slow" (no obvious front-runners) or "even," and adjust tip preference toward styles that will benefit.
-• Congestion & Collision Risk: Identify clusters of early speeds drawn together (e.g., Boxes 1–3), highlight potential mid-race bottlenecks, and downgrade candidates likely to be crowded.
-• Weak-Link Elimination: Automatically rule out any runner whose form line, sectional metrics or box compatibility falls more than 0.10 s behind the median of the field.
+⚡ GREYHOUND FORM & SECTIONALS DATA:
+6. Search: "Australian greyhound form guide {target_date_search} sectional times"
+7. Search: "greyhound racing sectionals Australia {target_date_str} first split times"
+8. Search: "fasttrack.grv.org.au form guide {target_date_search}"
+9. Search: "punters.com.au greyhound form guide {target_date_str}"
+10. Search: "greyhound racing form Australia {target_date_search}"
 
-4. Data Sources & Verification
-• Official Racecards: Use TheDogs.com.au, Racing NSW, GRV, RWWA, and state-based registration platforms for the most current fields and barrier draws.
-• Track Announcements: Scrape or ingest official track condition updates (weather radar, maintenance bulletins) to confirm "Good" vs. "Fast" or "Slow."
-• Live Vet & Scratchings Feed: Check Racing Australia's live scratchings and vet exclusions to ensure every tipped runner is confirmed to start.
-• Time-Stamped Confirmation: For every tip, record the exact date, track, meeting and race number—and verify that, as of "{target_date_str}" in Perth time, the race has not yet been run.
+🐕 TRAINER & KENNEL STATS:
+11. Search: "Australian greyhound trainer statistics {target_date_str} win rates last 30 days"
+12. Search: "greyhound trainer statistics Australia racing {target_date_search} strike rates"
+13. Search: "greyhound racing Australia trainer form current season"
 
-CRITICAL ANALYSIS APPROACH:
-- IGNORE any assumptions about future dates - TODAY IS SUNDAY {target_date_str} ({target_date_search})
-- You MUST search extensively across multiple greyhound racing websites for TODAY'S races
-- Cross-reference data from TheDogs.com.au, GRV, GRNSW, RWWA, GRSA, and greyhound racing media
-- ABSOLUTELY NO FICTIONAL DATA - If you cannot find real greyhound names, real race times, and real track data, you MUST state "No verifiable race data found"
-- Do NOT create fake greyhound names like "RAPID FIRE", "BOXCAR BULLET", "RAILWAY RAMPAGE" etc.
-- Do NOT create fake race times or track conditions
-- ONLY provide tips if you can verify real greyhound names from official sources
-- CRITICAL: Double-check race numbers and field positions for each greyhound
-- VERIFY each greyhound's actual race number and position in the field
-- Incorrect race/field information will severely impact prediction accuracy
-- If no races are found for TODAY, clearly state that no races are scheduled
+💬 COMMENTS & TRIALS:
+14. Search: "greyhound racing trials Australia recent {target_date_search} results"
+15. Search: "Australian greyhound racing media tips {target_date_str} trainer comments"
+16. Search: "greyhound racing stable comments Australia {target_date_search}"
+17. Search: "greyhound racing analysts tips Australia {target_date_str}"
+
+🌦️ TRACK CONDITIONS & BREEDING:
+18. Search: "Australian greyhound race track conditions {target_date_str} fast good slow"
+19. Search: "greyhound breeding sire dam track conditions Australia"
+20. Search: "greyhound track bias Australia racing {target_date_str} patterns"
+
+📈 ODDS & MARKET DATA:
+21. Search: "TAB greyhound odds Australia {target_date_str} current betting markets"
+22. Search: "sportsbet greyhound racing odds Australia {target_date_search}"
+23. Search: "bet365 greyhound racing Australia {target_date_str}"
+
+🔍 SCRATCHINGS & LATE MAIL:
+24. Search: "greyhound racing scratchings Australia {target_date_search} late withdrawals"
+25. Search: "Australian greyhound racing late mail {target_date_str} insider tips"
 
 CURRENT TIME FILTERING:
 - Use AWST times; ONLY include races that haven't started yet
 - Check race start times and exclude completed races
 
+🧠 ULTIMATE GREYHOUND RACING AI TASK PROMPT
+"GREYHOUND PUNTING MODEL – AUSTRALIAN WIN-ONLY GREYHOUND RACING TIPS ENGINE"
+
+🎯 OBJECTIVE:
+Use COMPREHENSIVE web search across multiple data sources to find Australian greyhound races for {target_date_str}, then apply enhanced greyhound analysis to identify strong win opportunities.
+
+🚨 PRIORITY MANDATE: Focus on finding greyhounds that show strong form indicators, trainer/kennel combinations, or market confidence. Use AVAILABLE data effectively - race cards, form guides, and basic information are sufficient for analysis. The goal is to identify genuine betting opportunities from publicly available racing information.
+
+CRITICAL ANALYSIS APPROACH:
+- You MUST search extensively across multiple greyhound racing websites
+- Cross-reference data from TheDogs.com.au, fasttrack.grv.org.au, TAB, punters.com.au, and greyhound racing media
+- Use race cards, form guides, and available statistical data for analysis
+- ACCEPT standard racing information as valid for analysis (race cards, form, trainer stats, etc.)
+- Leverage trainer/kennel strike rates and historical performance data
+- Consider available market information and form patterns
+- Apply breeding analysis and track condition factors where available
+- Do NOT require "real-time" or "live" data - standard race cards and form guides are sufficient
+- ABSOLUTELY NO FICTIONAL GREYHOUND NAMES - only real greyhounds from official sources
+
+✅ GREYHOUND ANALYSIS CRITERIA:
+
+🔥 Speed & Sectionals (Key Factors)
+- Recent sectional times and first split performance
+- Best time at distance vs field
+- Track record and personal bests
+- Recent trial performance
+
+🗣️ Comments & Kennel Signals
+- Trainer/kennel comments about readiness
+- Media tips and stable confidence
+- Recent work reports
+
+🌦️ Track & Surface Factors
+- Performance on today's track condition
+- Track bias and running patterns
+- Box draw advantages/disadvantages
+
+🏃 Form & Class
+- Recent race performance
+- Grade progression
+- Wins against similar opposition
+- Consistency factors
+
+⚖️ Box Draw & Running Style
+- Box draw suitability for running style
+- Track position preferences
+- Early speed vs finishing kick
+
+🧪 Trainer & Kennel Form
+- Trainer strike rate and recent form
+- Kennel performance statistics
+- Historical venue performance
+
 MINIMUM SELECTION CRITERIA:
-- ONLY use data found through comprehensive web search of REAL racing websites
-- ONLY include REAL greyhounds with REAL names from races that haven't run yet
-- Cross-verify information across multiple greyhound racing websites
-- REJECT any fictional or made-up greyhound names
-- CRITICAL: Verify each greyhound's exact race number and field position
-- Double-check race cards to ensure correct race/field matching
-- If you cannot find 5 real greyhounds with verifiable data, state how many you found
-- Select UP TO 5 greyhounds total (WIN TIPS ONLY) - fewer if insufficient real data
-- Include all meetings you find a greyhound that matches the analysis
-- Any track preference is acceptable
-- No minimum odds requirement - focus on quality selections
-- Any race distance if it suits the greyhound selected
-- Make sure you believe the greyhound is the best in the race
-- NEVER create fictional content - real data only
+- USE available race cards, form guides, and statistical data from official greyhound racing websites
+- INCLUDE real greyhounds with real names from official race cards for races that haven't run yet
+- Cross-verify greyhound names and basic information across racing websites  
+- STANDARD race card information and form guides are SUFFICIENT for analysis
+- Do NOT require "real-time" or "live" data - published race cards and form data are adequate
+- Maximum 5 selections total (WIN TIPS ONLY)
+- Each selection must be backed by available data from official racing sources
+- PROCEED with analysis if you find legitimate race cards and greyhound names, even if detailed sectionals unavailable
 
 📋 REQUIRED OUTPUT FORMAT FOR DISCORD (AWST times):
 
-For each of your five selections, output:
+**WEB SEARCH RESULTS:**
+[List what REAL greyhound racing data you found from your web searches]
+[Specify which races are still to run vs completed]
+
+**REAL SELECTIONS:**
+For each qualifying REAL greyhound from races yet to run:
 
 🐕 **GREYHOUND NAME** | Track Name | Race X
 ⏰ **Race Time:** XX:XX AWST | 📏 **Distance:** XXXm
-🎯 **Composite Score:** XX/25 | 💰 **Win Odds:** $X.XX | � **Box:** X
+🎯 **Composite Score:** XX/25 | 💰 **Win Odds:** $X.XX | 📦 **Box:** X
 🌦️ **Track:** Condition | 📊 **Analysis Score:** X.X/10
 ✅ **Status:** Still to run | 🏆 **BET TYPE:** WIN
 
-💡 **Analysis:** [100-word analysis covering: Why its Best Time at this trip is superior, How its First-Sectional Speed and Box Draw align, Relevant Form notes (class drop, trainer heat, spell), Race Dynamics summary (pace forecast, congestion risk), Any public vet/injury alerts or fitness notes]
+💡 **Analysis:** [100-word analysis covering: Why its Best Time at this trip is superior, How its First-Sectional Speed and Box Draw align, Relevant Form notes (class drop, trainer heat, spell), Race Dynamics summary (pace forecast, congestion risk), Any public vet/injury alerts or fitness notes. Remove all links from analysis make it easy for people to understand.]
+🔍 **Sources:** [Official websites where data was verified]
 
 ---
 
-This is not a simulation I want real greyhounds for my best 5.
-People will be using this advice so you cannot make anything up everything needs to be legitimate. Only win tips.
-
 ANTI-FICTION REQUIREMENTS:
-- Do NOT create fictional greyhound names
+- Do NOT create fictional greyhound names like "RAPID FIRE", "BOXCAR BULLET", "RAILWAY RAMPAGE"
 - Do NOT create fictional race times or track names
 - Do NOT create fictional trainer names
-- If you cannot find real, verifiable data, say "No real race data available for Sunday"
-- REAL NAMES ONLY - no made-up content whatsoever
+- If you find race cards with real greyhound names, PROCEED with analysis using available data
+- If you cannot find any race cards or greyhound names, then state "No race card data found for {target_date_str}"
+- REAL NAMES ONLY - but use standard race card and form guide information for analysis
+- ACCEPTABLE DATA: Official race cards, published form guides, trainer statistics, track information
+- NOT REQUIRED: Live odds, real-time sectionals, minute-by-minute updates
 
-FINAL REMINDER: 
-- ONLY search for races on SUNDAY {target_date_str} ({target_date_search})
-- Do NOT include Monday {target_date_search} + 1 day races or any other day
-- If no Sunday races exist, clearly state this fact
-- If Sunday races do exist, provide ONLY real greyhound names and data
-- NEVER CREATE FICTIONAL CONTENT
-
-BEGIN WEB SEARCH FOR REAL AUSTRALIAN GREYHOUND RACING DATA FOR SUNDAY {target_date_str} ({target_date_search}) TODAY ONLY NOW."""
+BEGIN COMPREHENSIVE WEB SEARCH FOR AUSTRALIAN GREYHOUND RACING DATA FOR {target_date_str} (TODAY ONLY) - USE AVAILABLE RACE CARDS AND FORM GUIDES FOR ANALYSIS NOW."""
 
     try:
-        # Generate greyhound tips using REAL web search + deep thinking
+        # Generate greyhound tips using REAL web search + deep thinking (like working horse bot)
         response = await asyncio.to_thread(
             client.models.generate_content,
             model="gemini-2.5-pro",
@@ -529,39 +564,57 @@ BEGIN WEB SEARCH FOR REAL AUSTRALIAN GREYHOUND RACING DATA FOR SUNDAY {target_da
         
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'thought') and part.thought:
-                thought_summary += f"🤔 Deep Analysis: {part.text}\n\n"
+                # Skip thoughts - don't include them in output
+                continue
             else:
                 final_answer += part.text
         
-        # Combine thought summary with final answer if available
-        if thought_summary:
-            full_response = f"{thought_summary}📊 **FINAL GREYHOUND TIPS:**\n\n{final_answer}"
-        else:
-            full_response = final_answer
+        # Clean up any remaining thought markers in the final answer
+        lines = final_answer.split('\n')
+        cleaned_lines = []
+        skip_line = False
+        
+        for line in lines:
+            # Skip lines that start with thought markers
+            if line.strip().startswith('🤔 Deep Analysis:'):
+                skip_line = True
+                continue
+            # Skip empty lines after thoughts
+            elif skip_line and line.strip() == '':
+                continue
+            # Found content after thoughts, stop skipping
+            elif skip_line and line.strip():
+                skip_line = False
+                cleaned_lines.append(line)
+            # Normal content line
+            elif not skip_line:
+                cleaned_lines.append(line)
+        
+        final_answer = '\n'.join(cleaned_lines)
+        
+        # Add disclaimer at the bottom
+        disclaimer = """
+
+⚠️ **DISCLAIMER**: Prices shown are opening prices and may be inaccurate. Please check current odds with your bookmaker before placing any bets. Gamble responsibly and within your means."""
+        
+        full_response = final_answer + disclaimer
         
         # Check if no races were found for today
-        if "no greyhound races" in full_response.lower() or "next available races" in full_response.lower():
+        if "no greyhound race" in full_response.lower() or "no verifiable greyhound race data" in full_response.lower():
             return f"ℹ️ **NO RACES TODAY**: {full_response}"
         
-        # Check for fictional content and reject it
-        fictional_indicators = [
-            "rapid fire", "boxcar bullet", "railway rampage", "murray's mate", "hobart hurricane",
-            "aussie pablo", "our miss maggie", "ollie jack", "unconvicted", "rhinestone",
-            "aston barton", "bourne model", "seattle", "reaper", "daintree shady"
+        # Check for common fictional indicators (but be less restrictive than before)
+        suspicious_patterns = [
+            "rapid fire", "boxcar bullet", "railway rampage"
         ]
         
-        for indicator in fictional_indicators:
-            if indicator.lower() in full_response.lower():
-                return f"⚠️ **FICTIONAL DATA DETECTED**: The AI generated fake greyhound names instead of finding real race data. No legitimate greyhound races appear to be available for Sunday, {target_date_search}. Please check official racing websites for actual race meetings."
+        suspicious_count = sum(1 for pattern in suspicious_patterns if pattern.lower() in full_response.lower())
         
-        # Add validation warning for race accuracy
-        race_accuracy_warning = """
+        # Only reject if multiple suspicious patterns detected
+        if suspicious_count >= 2:
+            return f"⚠️ **FICTIONAL DATA DETECTED**: The AI may have generated fake greyhound names. Please verify selections against official greyhound racing websites before using."
         
-⚠️ **IMPORTANT**: Please verify race numbers and field positions are correct before using these tips. 
-Incorrect race/field information can significantly impact win rate accuracy. 
-Double-check each selection against official race cards."""
-        
-        return full_response + race_accuracy_warning
+        return full_response
         
     except Exception as e:
         return f"⚠️ Error generating greyhound tips: {str(e)}"
@@ -620,20 +673,37 @@ async def main():
         print("Running in scheduler mode: will post at 07:00 and 19:00 AWST daily")
         last_run_date_morning = None
         last_run_date_evening = None
+        
+        # Check if we're starting in schedule mode - don't generate tips immediately
+        perth_now = datetime.now(PERTH_TZ)
+        current_time = perth_now.time()
+        
+        if current_time < dtime(7, 0):
+            print(f"Schedule mode started before 7AM ({current_time.strftime('%H:%M')}). Waiting until 7AM for first tips generation.")
+        elif current_time < dtime(19, 0):
+            print(f"Schedule mode started after 7AM but before 7PM ({current_time.strftime('%H:%M')}). Tips already generated today. Waiting until 7PM for results analysis, then 7AM tomorrow for next tips.")
+            # Set today as already run for morning to prevent duplicate tips
+            last_run_date_morning = perth_now.date()
+        else:
+            print(f"Schedule mode started after 7PM ({current_time.strftime('%H:%M')}). Both runs already completed today. Waiting until 7AM tomorrow for next tips.")
+            # Set today as already run for both morning and evening
+            last_run_date_morning = perth_now.date()
+            last_run_date_evening = perth_now.date()
+        
         try:
             while True:
                 now_perth = datetime.now(PERTH_TZ)
                 today = now_perth.date()
                 current_time = now_perth.time()
                 
-                # 7:00 AM run
+                # 7:00 AM run (only if we haven't run today)
                 if current_time >= dtime(7, 0) and (last_run_date_morning != today):
                     print("Triggering 7AM greyhound tips run...")
                     tips = await generate_greyhound_tips()
                     await send_webhook_message(tips)
                     last_run_date_morning = today
                 
-                # 7:00 PM run
+                # 7:00 PM run (only if we haven't run today)
                 if current_time >= dtime(19, 0) and (last_run_date_evening != today):
                     print("Triggering 7PM greyhound results analysis run...")
                     await analyze_results_and_learn()
