@@ -1,6 +1,4 @@
-﻿discord.py==2.3.2
+discord.py==2.3.2
 google-genai==0.5.4
 aiohttp==3.9.1
 pytz==2023.3
-python-3.11.7
-
