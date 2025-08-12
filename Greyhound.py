@@ -1,3 +1,32 @@
+"""
+Greyhound Racing Tips Bot - Railway Ready
+
+RAILWAY DEPLOYMENT INSTRUCTIONS:
+1. Create new Railway project
+2. Connect to GitHub repo containing this file
+3. Add these files to your repo:
+   
+   requirements.txt:
+   discord.py==2.3.2
+   google-generativeai==0.8.3
+   aiohttp==3.9.1
+   pytz==2023.3
+   
+   railway.json:
+   {
+     "build": {
+       "builder": "NIXPACKS"
+     },
+     "deploy": {
+       "startCommand": "python Greyhound.py",
+       "restartPolicyType": "ON_FAILURE"
+     }
+   }
+
+4. Deploy to Railway - no environment variables needed (all hardcoded)
+5. Bot will automatically run in schedule mode on Railway
+"""
+
 import discord
 from discord import Webhook
 from google import genai
@@ -12,18 +41,22 @@ import threading
 import os
 from datetime import datetime, timedelta, time as dtime
 
-# API Configuration - Hardcoded values
+# API Configuration - Hardcoded for Railway deployment
 GEMINI_API_KEY = 'AIzaSyAojaPPXTTjezPfBI_FqbE9-jKb0u7oOGc'
 WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h'
 
-# Validate required environment variables
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY environment variable is required")
-if not WEBHOOK_URL:
-    raise ValueError("WEBHOOK_URL environment variable is required")
+# Railway-ready configuration - no environment variables needed
+print(f"✅ API Key configured: {GEMINI_API_KEY[:20]}...")
+print(f"✅ Webhook configured: {WEBHOOK_URL[:50]}...")
 
-# Data directory - Hardcoded local path
-DATA_DIR = r'c:\Users\Pixel\Desktop\HORSE AI LJ\data'
+# Data directory - Railway-friendly (will use /app/data in Railway)
+import os
+if os.path.exists('/app'):
+    # Railway deployment path
+    DATA_DIR = '/app/data'
+else:
+    # Local development path
+    DATA_DIR = r'c:\Users\Pixel\Desktop\HORSE AI LJ\data'
 
 # Learning system files (within DATA_DIR)
 LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
@@ -53,19 +86,33 @@ def default_predictions_for_today():
     }
 
 def ensure_data_dir_and_files():
-    """Ensure data directory and JSON files exist (Railway-friendly)."""
+    """Ensure data directory and JSON files exist (Railway-ready)."""
     try:
+        # Create data directory with proper permissions
         os.makedirs(DATA_DIR, exist_ok=True)
-        # Learning data
+        print(f"📁 Data directory: {DATA_DIR}")
+        
+        # Learning data file
         if not os.path.exists(LEARNING_DATA_FILE):
             with open(LEARNING_DATA_FILE, 'w') as f:
                 json.dump(DEFAULT_LEARNING_DATA, f, indent=2)
-        # Daily predictions (today)
+            print("📊 Created learning data file")
+        
+        # Daily predictions file
         if not os.path.exists(DAILY_PREDICTIONS_FILE):
             with open(DAILY_PREDICTIONS_FILE, 'w') as f:
                 json.dump(default_predictions_for_today(), f, indent=2)
+            print("📅 Created daily predictions file")
+            
     except Exception as e:
-        print(f"Error ensuring data files: {e}")
+        print(f"❌ Error ensuring data files: {e}")
+        # Try to create in current directory as fallback
+        global DATA_DIR, LEARNING_DATA_FILE, DAILY_PREDICTIONS_FILE
+        DATA_DIR = './data'
+        LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
+        DAILY_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'daily_greyhound_predictions.json')
+        os.makedirs(DATA_DIR, exist_ok=True)
+        print(f"📁 Fallback data directory: {DATA_DIR}")
 
 # Perth timezone
 PERTH_TZ = pytz.timezone('Australia/Perth')
@@ -741,23 +788,25 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
         print(f"Error sending webhook: {str(e)}")
 
 async def main():
-    print("Starting Greyhound Racing Tips Bot (Perth schedule)")
+    print("🚀 Starting Greyhound Racing Tips Bot - Railway Ready!")
+    print("=" * 60)
     
-    # Debug current dates
+    # Debug current dates and configuration
     perth_now = datetime.now(PERTH_TZ)
     system_now = datetime.now()
-    print(f"System time: {system_now.strftime('%Y-%m-%d %H:%M')}")
-    print(f"Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
-    print(f"Target date for analysis: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
+    print(f"🕐 System time: {system_now.strftime('%Y-%m-%d %H:%M')}")
+    print(f"🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
+    print(f"📅 Target date: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
+    print(f"📁 Data directory: {DATA_DIR}")
+    print("=" * 60)
     
-    print(f"Data directory: {DATA_DIR}")
-    print(f"API Key configured: {'Yes' if GEMINI_API_KEY else 'No'}")
-    print(f"Webhook configured: {'Yes' if WEBHOOK_URL else 'No'}")
-    
-    # Ensure data directory and files exist for Railway
+    # Ensure data directory and files exist for Railway deployment
     ensure_data_dir_and_files()
     
-    mode = os.environ.get('RUN_MODE', 'once').lower()
+    # Check for Railway environment variable to determine mode
+    mode = os.environ.get('RUN_MODE', 'schedule' if os.path.exists('/app') else 'once').lower()
+    print(f"🔧 Running in mode: {mode}")
+    
     if mode == 'research':
         # Research mode - run analysis but don't send to Discord
         try:
