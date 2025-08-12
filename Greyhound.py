@@ -87,6 +87,8 @@ def default_predictions_for_today():
 
 def ensure_data_dir_and_files():
     """Ensure data directory and JSON files exist (Railway-ready)."""
+    global DATA_DIR, LEARNING_DATA_FILE, DAILY_PREDICTIONS_FILE
+    
     try:
         # Create data directory with proper permissions
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -107,7 +109,6 @@ def ensure_data_dir_and_files():
     except Exception as e:
         print(f"❌ Error ensuring data files: {e}")
         # Try to create in current directory as fallback
-        global DATA_DIR, LEARNING_DATA_FILE, DAILY_PREDICTIONS_FILE
         DATA_DIR = './data'
         LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
         DAILY_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'daily_greyhound_predictions.json')
