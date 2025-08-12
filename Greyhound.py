@@ -46,20 +46,25 @@ import threading
 import os
 from datetime import datetime, timedelta, time as dtime
 
-# API Configuration - Railway environment variables ONLY
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+# API Configuration - Railway environment variables with hardcoded fallbacks
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyAojaPPXTTjezPfBI_FqbE9-jKb0u7oOGc')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL', 'https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h')
 
-# Validate that environment variables are set
-if not GEMINI_API_KEY:
-    raise ValueError("❌ GEMINI_API_KEY environment variable is required but not set")
-if not WEBHOOK_URL:
-    raise ValueError("❌ WEBHOOK_URL environment variable is required but not set")
+# Clean up any potential whitespace issues
+GEMINI_API_KEY = GEMINI_API_KEY.strip() if GEMINI_API_KEY else None
+WEBHOOK_URL = WEBHOOK_URL.strip() if WEBHOOK_URL else None
 
-# Railway-ready configuration
-print(f"✅ API Key configured: {GEMINI_API_KEY[:20]}...")
-print(f"✅ Webhook configured: {WEBHOOK_URL[:50]}...")
-print(f"🔧 Using Railway environment variables: Yes")
+# Railway-ready configuration with detailed debugging
+using_env_vars = 'GEMINI_API_KEY' in os.environ
+print(f"✅ API Key configured: {GEMINI_API_KEY[:20] if GEMINI_API_KEY else 'None'}...")
+print(f"✅ Webhook configured: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'None'}...")
+print(f"🔧 Using Railway environment variables: {'Yes' if using_env_vars else 'No (using hardcoded fallback)'}")
+print(f"🔑 API Key length: {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0} characters")
+print(f"🔗 Webhook length: {len(WEBHOOK_URL) if WEBHOOK_URL else 0} characters")
+
+# Validate API key format
+if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('AIza'):
+    print(f"⚠️ WARNING: API key doesn't start with 'AIza' - this might be incorrect")
 
 # Data directory - Railway-friendly (will use /app/data in Railway)
 if os.path.exists('/app'):
@@ -585,12 +590,19 @@ OUTPUT FORMAT:
 
 **🐕 TOP GREYHOUND SELECTIONS FOR {target_date_str}:**
 
-🐕 **REAL DOG NAME** | Track Name | Race X
-⏰ **Race Time:** XX:XX AWST | 📏 **Distance:** XXXm | 📦 **Box:** X
-🎯 **Win Probability:** XX% | 🎲 **Place Probability:** XX%
-💰 **Market Odds:** $X.XX | 💎 **Fair Odds:** $X.XX | 📈 **Potential Value Edge:** +XX%
-🏆 **Bet Type:** [Win/Each-Way/Place] | 💵 **Stake:** [0.5-1.5 units]
+| **Race (Track)** | **Greyhound (Box)** | **Est. Win%** | **Est. Place%** | **Market Odds** | **Fair Odds** | **Potential Value** | **Bet Type** | **Units** |
+|------------------|---------------------|---------------|-----------------|-----------------|---------------|-------------------|--------------|-----------|
+| Race X (Track)   | **Dog Name** (Box X) | XX%          | XX%             | $X.XX           | $X.XX         | +XX%              | Win/EW       | 0.5-1.5   |
+
+**DETAILED SELECTIONS:**
+
+🐕 **DOG NAME** | Race X | Track Name
+📦 **Box:** X | ⏰ **Time:** XX:XX AWST | 📏 **Distance:** XXXm
+🎯 **Win:** XX% | 🎲 **Place:** XX% | 💰 **Odds:** $X.XX | 💎 **Fair:** $X.XX | 📈 **Edge:** +XX%
+🏆 **Bet:** Win/Each-Way | 💵 **Stake:** X.X units
 💡 **Why:** [Brief analysis - early speed, form, value reason]
+
+---
 
 IMPORTANT: ONLY PROVIDE THE FINAL TIPS IN THIS FORMAT. DO NOT include any analysis steps, research process, data sources mentioned, or methodology explanations. Users only want to see the clean tip selections.
 
@@ -816,9 +828,10 @@ async def main():
     ensure_data_dir_and_files()
     
     # Check for Railway environment variable to determine mode
-    mode = os.environ.get('RUN_MODE', 'schedule' if os.path.exists('/app') else 'once').lower()
+    # Default to 'schedule' mode for automatic daily operation
+    mode = os.environ.get('RUN_MODE', 'schedule').lower()
     print(f"🔧 Running in mode: {mode}")
-    print(f"📊 RUN_MODE from environment: {os.environ.get('RUN_MODE', 'Not set - using default')}")
+    print(f"📊 RUN_MODE from environment: {os.environ.get('RUN_MODE', 'Not set - using default schedule mode')}")
     
     if mode == 'research':
         # Research mode - run analysis but don't send to Discord
