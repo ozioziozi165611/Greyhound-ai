@@ -23,8 +23,13 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
      }
    }
 
-4. Deploy to Railway - no environment variables needed (all hardcoded)
-5. Bot will automatically run in schedule mode on Railway
+4. Set these REQUIRED environment variables in Railway:
+   - GEMINI_API_KEY: Your Google AI API key
+   - WEBHOOK_URL: Your Discord webhook URL  
+   - RUN_MODE: schedule (for automatic daily posting)
+
+5. Deploy to Railway - bot will use environment variables only
+6. Bot will automatically run in schedule mode and post at 7AM/7PM Perth time
 """
 
 import discord
@@ -41,16 +46,22 @@ import threading
 import os
 from datetime import datetime, timedelta, time as dtime
 
-# API Configuration - Hardcoded for Railway deployment
-GEMINI_API_KEY = 'AIzaSyAojaPPXTTjezPfBI_FqbE9-jKb0u7oOGc'
-WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h'
+# API Configuration - Railway environment variables ONLY
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 
-# Railway-ready configuration - no environment variables needed
+# Validate that environment variables are set
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY environment variable is required but not set")
+if not WEBHOOK_URL:
+    raise ValueError("❌ WEBHOOK_URL environment variable is required but not set")
+
+# Railway-ready configuration
 print(f"✅ API Key configured: {GEMINI_API_KEY[:20]}...")
 print(f"✅ Webhook configured: {WEBHOOK_URL[:50]}...")
+print(f"🔧 Using Railway environment variables: Yes")
 
 # Data directory - Railway-friendly (will use /app/data in Railway)
-import os
 if os.path.exists('/app'):
     # Railway deployment path
     DATA_DIR = '/app/data'
@@ -807,6 +818,7 @@ async def main():
     # Check for Railway environment variable to determine mode
     mode = os.environ.get('RUN_MODE', 'schedule' if os.path.exists('/app') else 'once').lower()
     print(f"🔧 Running in mode: {mode}")
+    print(f"📊 RUN_MODE from environment: {os.environ.get('RUN_MODE', 'Not set - using default')}")
     
     if mode == 'research':
         # Research mode - run analysis but don't send to Discord
