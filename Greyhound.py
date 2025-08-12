@@ -12,9 +12,9 @@ import threading
 import os
 from datetime import datetime, timedelta, time as dtime
 
-# API Configuration (Railway environment variables - NO DEFAULTS for security)
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+# API Configuration - Hardcoded values
+GEMINI_API_KEY = 'AIzaSyAojaPPXTTjezPfBI_FqbE9-jKb0u7oOGc'
+WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h'
 
 # Validate required environment variables
 if not GEMINI_API_KEY:
@@ -22,8 +22,8 @@ if not GEMINI_API_KEY:
 if not WEBHOOK_URL:
     raise ValueError("WEBHOOK_URL environment variable is required")
 
-# Data directory (Railway volume mount recommended: /data)
-DATA_DIR = os.getenv('DATA_DIR', '/tmp/data')  # Default to /tmp/data for Railway
+# Data directory - Hardcoded local path
+DATA_DIR = r'c:\Users\Pixel\Desktop\HORSE AI LJ\data'
 
 # Learning system files (within DATA_DIR)
 LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
@@ -76,17 +76,17 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # Define grounding tool for REAL web search
 grounding_tool = types.Tool(google_search=types.GoogleSearch())
 
-# Configure generation with deep thinking AND real web search (like working horse bot)
+# Configure generation with deep thinking AND real web search with extended budget
 generation_config = types.GenerateContentConfig(
     tools=[grounding_tool],  # Enable real-time web search
     thinking_config=types.ThinkingConfig(
-        thinking_budget=-1,  # Dynamic thinking
+        thinking_budget=30000,  # Increased thinking budget for 5+ minute analysis
         include_thoughts=True  # Include reasoning process
     ),
     temperature=0.2,
     top_p=0.8,
     top_k=30,
-    max_output_tokens=16384
+    max_output_tokens=32768  # Doubled output tokens for comprehensive analysis
 )
 
 def load_learning_data():
@@ -189,6 +189,31 @@ async def generate_greyhound_tips():
     save_daily_predictions(predictions_data)
     
     return tips_result
+
+async def research_analysis_only():
+    """Generate research analysis without sending to Discord - for testing and verification"""
+    perth_now = datetime.now(PERTH_TZ)
+    target_date_str = perth_now.strftime("%B %d, %Y")
+    target_date_search = perth_now.strftime("%Y-%m-%d")
+    current_time_perth = perth_now.strftime("%H:%M AWST")
+    
+    print(f"Generating research analysis for {target_date_str} at {current_time_perth}")
+    print(f"DEBUG: Perth date: {target_date_search}, Perth time: {current_time_perth}")
+    
+    # Get learning insights
+    learning_insights = get_learning_enhanced_prompt()
+    
+    # Analyze today's greyhound races only - research mode
+    research_result = await analyze_greyhound_racing_day(target_date_str, target_date_search, current_time_perth, learning_insights)
+    
+    # Print to console instead of sending to Discord
+    print("\n" + "="*80)
+    print("RESEARCH ANALYSIS RESULTS")
+    print("="*80)
+    print(research_result)
+    print("="*80)
+    
+    return research_result
 
 def extract_predictions_for_learning(tips_content):
     """Extract predictions from greyhound tips content for later learning analysis"""
@@ -299,7 +324,7 @@ async def analyze_prediction_accuracy(predictions_data, results_content):
     analysis_summary = []
     
     for prediction in predictions_data['predictions']:
-        horse_name = prediction['greyhound_name']
+        greyhound_name = prediction['greyhound_name']
         # crude winner detection; can be improved later
         winner_line = re.search(r"Winner:\s*([A-Za-z'’\-\.\s]+)", results_content, re.IGNORECASE)
         if winner_line:
@@ -307,17 +332,17 @@ async def analyze_prediction_accuracy(predictions_data, results_content):
         else:
             winner_name = ""
         
-        if horse_name and winner_name and horse_name.lower() in winner_name.lower():
+        if greyhound_name and winner_name and greyhound_name.lower() in winner_name.lower():
             correct_predictions += 1
-            analysis_summary.append(f"✅ {horse_name} - CORRECT (Won)")
+            analysis_summary.append(f"✅ {greyhound_name} - CORRECT (Won)")
             for detail in prediction.get('prediction_details', []):
                 if 'Composite Score:' in detail or 'Track:' in detail or 'Box:' in detail:
-                    learning_data['successful_patterns'].append(f"WINNER - {horse_name}: {detail}")
+                    learning_data['successful_patterns'].append(f"WINNER - {greyhound_name}: {detail}")
         else:
-            analysis_summary.append(f"❌ {horse_name} - FAILED (Did not win)")
+            analysis_summary.append(f"❌ {greyhound_name} - FAILED (Did not win)")
             for detail in prediction.get('prediction_details', []):
                 if 'Composite Score:' in detail or 'Track:' in detail or 'Box:' in detail:
-                    learning_data['failed_patterns'].append(f"FAILED - {horse_name}: {detail}")
+                    learning_data['failed_patterns'].append(f"FAILED - {greyhound_name}: {detail}")
     
     # Update statistics
     learning_data['total_predictions'] += total_predictions
@@ -397,160 +422,177 @@ def extract_summary(tips_content):
         return "❌ No qualifying greyhound selections found for this day."
 
 async def analyze_greyhound_racing_day(target_date_str, target_date_search, current_time_perth, learning_insights):
-    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis - using successful horse bot approach"""
+    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis"""
     
-    # Enhanced prompt with MANDATORY web search for REAL greyhound data, today only - based on working horse bot
-    main_prompt = f"""🌐 LIVE WEB SEARCH REQUIRED - REAL AUSTRALIAN GREYHOUND RACING DATA (TODAY ONLY)
+    # Expert greyhound racing analyst prompt with strict data source requirements
+    main_prompt = f"""You are an expert greyhound racing analyst and betting strategist. I will provide, or you will source, official race form data for all races scheduled for {target_date_str}.
 
 Current Time: {current_time_perth} (Perth/AWST)
-Target Analysis: today's greyhound races for {target_date_str} ONLY
+Target Analysis: greyhound races for {target_date_str} ONLY - RACES THAT HAVEN'T RUN YET
 
 {learning_insights}
 
-You MUST use your web search capabilities to find REAL greyhound racing information for TODAY ({target_date_str}).
+COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
 
-MANDATORY COMPREHENSIVE WEB SEARCHES TO PERFORM:
+DEEP RESEARCH PLAN FOR GREYHOUND RACING ANALYSIS:
 
-📊 GREYHOUND RACE CARDS & BASIC DATA:
-1. Search: "Australian greyhound racing {target_date_search} race cards TheDogs.com.au"
-2. Search: "Wentworth Park Sandown Cannington Angle Park {target_date_str} greyhound meetings"
-3. Search: "NSW VIC QLD SA WA greyhound racing {target_date_str} full cards"
-4. Search: "TheDogs.com.au {target_date_search} complete greyhound race cards"
-5. Search: "TAB greyhound racing Australia {target_date_str} all meetings times boxes"
+**Step 1: Identify All Australian Greyhound Meetings**
+MUST COMPLETE: Get a complete list of all greyhound meetings scheduled across every state in Australia for {target_date_str}. This ensures no race is missed.
+- Search: "all greyhound racing meetings Australia {target_date_search}"
+- Search: "Australian greyhound racing calendar {target_date_str}"
+- Search: "greyhound racing meetings NSW VIC QLD SA WA NT {target_date_search}"
 
-⚡ GREYHOUND FORM & SECTIONALS DATA:
-6. Search: "Australian greyhound form guide {target_date_search} sectional times"
-7. Search: "greyhound racing sectionals Australia {target_date_str} first split times"
-8. Search: "fasttrack.grv.org.au form guide {target_date_search}"
-9. Search: "punters.com.au greyhound form guide {target_date_str}"
-10. Search: "greyhound racing form Australia {target_date_search}"
+**Step 2: Gather Comprehensive Race Form Data**
+MUST COMPLETE: For each meeting identified in Step 1, perform targeted searches to collect detailed form data for ALL runners:
+- Search: "[Track Name] greyhound race card and form guide {target_date_str}"
+- Search: "greyhound form guide for all races [Track Name] {target_date_search}"
+- Search: "TheDogs.com.au race cards {target_date_search}"
+- Search: "greyhound sectional times and form {target_date_search}"
+- Repeat this process for EVERY track identified (e.g., Gosford, Murray Bridge, Townsville, Bulli, etc.)
 
-🐕 TRAINER & KENNEL STATS:
-11. Search: "Australian greyhound trainer statistics {target_date_str} win rates last 30 days"
-12. Search: "greyhound trainer statistics Australia racing {target_date_search} strike rates"
-13. Search: "greyhound racing Australia trainer form current season"
+**Step 3: Check for Real-Time Updates and Track Conditions**
+MUST COMPLETE: Critical step to get the most up-to-date information that can influence race outcomes:
+- Search: "[Track Name] greyhound scratchings and track report {target_date_str}"
+- Search: "weather forecast for [Track Name] on {target_date_str}"
+- Search: "track bias report [Track Name] greyhound racing"
+- Search: "greyhound racing scratchings Australia {target_date_search}"
+- Repeat for EVERY track from Step 1
 
-💬 COMMENTS & TRIALS:
-14. Search: "greyhound racing trials Australia recent {target_date_search} results"
-15. Search: "Australian greyhound racing media tips {target_date_str} trainer comments"
-16. Search: "greyhound racing stable comments Australia {target_date_search}"
-17. Search: "greyhound racing analysts tips Australia {target_date_str}"
+**Step 4: Fetch Current Market Odds**
+MUST COMPLETE: To evaluate betting value, collect the latest market odds and track fluctuations:
+- Search: "live greyhound racing odds Australia {target_date_str}"
+- Search: "greyhound betting odds comparison {target_date_str}"
+- Search: "TAB greyhound odds {target_date_str}"
+- Search: "Sportsbet greyhound racing odds {target_date_search}"
 
-🌦️ TRACK CONDITIONS & BREEDING:
-18. Search: "Australian greyhound race track conditions {target_date_str} fast good slow"
-19. Search: "greyhound breeding sire dam track conditions Australia"
-20. Search: "greyhound track bias Australia racing {target_date_str} patterns"
+**Step 5: Perform Data-Driven Analysis and Simulation**
+MUST COMPLETE: After gathering all data, perform internal analysis using:
 
-📈 ODDS & MARKET DATA:
-21. Search: "TAB greyhound odds Australia {target_date_str} current betting markets"
-22. Search: "sportsbet greyhound racing odds Australia {target_date_search}"
-23. Search: "bet365 greyhound racing Australia {target_date_str}"
+(1) Weighted Model Application with specified percentages:
+- Early speed & acceleration (30%)
+- Consistency in recent form (20%)
+- Win/place strike rate (15%)
+- Track & distance suitability (15%)
+- Box draw advantage/disadvantage (10%)
+- Trainer performance (5%)
+- Market value (5%)
 
-🔍 SCRATCHINGS & LATE MAIL:
-24. Search: "greyhound racing scratchings Australia {target_date_search} late withdrawals"
-25. Search: "Australian greyhound racing late mail {target_date_str} insider tips"
+(2) Monte Carlo Simulations: Run at least 1,000 simulations per race to estimate win and place probabilities for each runner.
 
-CURRENT TIME FILTERING:
-- Use AWST times; ONLY include races that haven't started yet
-- Check race start times and exclude completed races
+(3) Tip Identification: Based on model and simulations, identify top 5 betting opportunities with:
+- Strong winning probabilities (>35%) OR high place probabilities (>65%)
+- Minimum market odds of $2.00 (avoid short-priced favorites)
+- Excellent value compared to current market odds (minimum 20% edge)
+- Focus on value selections, not just form favorites
 
-🧠 ULTIMATE GREYHOUND RACING AI TASK PROMPT
-"GREYHOUND PUNTING MODEL – AUSTRALIAN WIN-ONLY GREYHOUND RACING TIPS ENGINE"
+For each race, collect and synthesize all available data points, including: runner statistics (career, track & distance records), trainer and runner strike rates, early speed and sectional times, run styles, recent form (last 4-6 starts), historical head-to-head matchups, and race grade changes.
 
-🎯 OBJECTIVE:
-Use COMPREHENSIVE web search across multiple data sources to find Australian greyhound races for {target_date_str}, then apply enhanced greyhound analysis to identify strong win opportunities.
+Identify and incorporate any late scratchings, changes in weather, or track conditions and note how these may influence race outcomes, particularly regarding track bias.
 
-🚨 PRIORITY MANDATE: Focus on finding greyhounds that show strong form indicators, trainer/kennel combinations, or market confidence. Use AVAILABLE data effectively - race cards, form guides, and basic information are sufficient for analysis. The goal is to identify genuine betting opportunities from publicly available racing information.
+For each of the top 5 tips, provide a detailed breakdown including: the race number and track, the dog's name and box number, the estimated win and place probabilities, current market odds and calculated fair odds, the recommended bet type (Win, Each-Way, or Place), and a detailed justification based on the analyzed data.
 
-CRITICAL ANALYSIS APPROACH:
-- You MUST search extensively across multiple greyhound racing websites
-- Cross-reference data from TheDogs.com.au, fasttrack.grv.org.au, TAB, punters.com.au, and greyhound racing media
-- Use race cards, form guides, and available statistical data for analysis
-- ACCEPT standard racing information as valid for analysis (race cards, form, trainer stats, etc.)
-- Leverage trainer/kennel strike rates and historical performance data
-- Consider available market information and form patterns
-- Apply breeding analysis and track condition factors where available
-- Do NOT require "real-time" or "live" data - standard race cards and form guides are sufficient
-- ABSOLUTELY NO FICTIONAL GREYHOUND NAMES - only real greyhounds from official sources
+Format the final output as a report that includes a summary table of the top 5 tips and a detailed, data-driven rationale for each selection.
 
-✅ GREYHOUND ANALYSIS CRITERIA:
+APPROVED DATA SOURCES (MANDATORY):
 
-🔥 Speed & Sectionals (Key Factors)
-- Recent sectional times and first split performance
-- Best time at distance vs field
-- Track record and personal bests
-- Recent trial performance
+✅ TheDogs.com.au — Sectionals, early speed, box stats, career/track/distance performance, trainer stats, comments.
+✅ Watchdog.grv.org.au — VIC form, box draw records, odds, historical results.
+✅ TAB.com.au / Sportsbet.com.au — Market odds, fluctuations, tote vs fixed prices.
+✅ Racing.com / Racing Queensland / RWWA — Track bias, scratchings, weather conditions.
+✅ Punters.com.au (Form Guide) — Cross-check of stats and form.
 
-🗣️ Comments & Kennel Signals
-- Trainer/kennel comments about readiness
-- Media tips and stable confidence
-- Recent work reports
+❌ DO NOT USE:
+- Betting forums, Facebook groups, "hot tip" chats
+- Generic sports betting aggregator sites (Oddschecker-style)
+- YouTube or casual race preview channels without data
+- Non-official blogs or scraper sites
+- AI tip bots without transparent metrics
 
-🌦️ Track & Surface Factors
-- Performance on today's track condition
-- Track bias and running patterns
-- Box draw advantages/disadvantages
+CRITICAL TIMING REQUIREMENTS:
+- Current time is {current_time_perth} AWST
+- ONLY analyze races that start AFTER this time
+- Exclude any races that have already run or are currently running
+- Cross-check race start times against current Perth time
 
-🏃 Form & Class
-- Recent race performance
-- Grade progression
-- Wins against similar opposition
-- Consistency factors
+SELECTION CRITERIA FOR TOP 5 TIPS:
+- Win probability >35% OR place probability >65%
+- Minimum odds of $2.00 (no short-priced favorites under $2.00)
+- Strong value compared to market odds (minimum 20% edge)
+- Low variance in performance unless value is extreme (>30% edge)
+- Races must not have started yet
+- Focus on genuine value bets, not short-priced favorites
 
-⚖️ Box Draw & Running Style
-- Box draw suitability for running style
-- Track position preferences
-- Early speed vs finishing kick
+OUTPUT FORMAT:
 
-🧪 Trainer & Kennel Form
-- Trainer strike rate and recent form
-- Kennel performance statistics
-- Historical venue performance
+**🐕 TOP GREYHOUND SELECTIONS FOR {target_date_str}:**
 
-MINIMUM SELECTION CRITERIA:
-- USE available race cards, form guides, and statistical data from official greyhound racing websites
-- INCLUDE real greyhounds with real names from official race cards for races that haven't run yet
-- Cross-verify greyhound names and basic information across racing websites  
-- STANDARD race card information and form guides are SUFFICIENT for analysis
-- Do NOT require "real-time" or "live" data - published race cards and form data are adequate
-- Maximum 5 selections total (WIN TIPS ONLY)
-- Each selection must be backed by available data from official racing sources
-- PROCEED with analysis if you find legitimate race cards and greyhound names, even if detailed sectionals unavailable
+🐕 **REAL DOG NAME** | Track Name | Race X
+⏰ **Race Time:** XX:XX AWST | 📏 **Distance:** XXXm | 📦 **Box:** X
+🎯 **Win Probability:** XX% | 🎲 **Place Probability:** XX%
+💰 **Market Odds:** $X.XX | 💎 **Fair Odds:** $X.XX | 📈 **Potential Value Edge:** +XX%
+🏆 **Bet Type:** [Win/Each-Way/Place] | 💵 **Stake:** [0.5-1.5 units]
+💡 **Why:** [Brief analysis - early speed, form, value reason]
 
-📋 REQUIRED OUTPUT FORMAT FOR DISCORD (AWST times):
+IMPORTANT: ONLY PROVIDE THE FINAL TIPS IN THIS FORMAT. DO NOT include any analysis steps, research process, data sources mentioned, or methodology explanations. Users only want to see the clean tip selections.
 
-**WEB SEARCH RESULTS:**
-[List what REAL greyhound racing data you found from your web searches]
-[Specify which races are still to run vs completed]
+**STEP 4: CURRENT MARKET ODDS ASSESSMENT**
+[Market odds collected from approved sources]
+[Odds fluctuation patterns noted]
 
-**REAL SELECTIONS:**
-For each qualifying REAL greyhound from races yet to run:
+**STEP 5: DATA-DRIVEN ANALYSIS RESULTS**
 
-🐕 **GREYHOUND NAME** | Track Name | Race X
-⏰ **Race Time:** XX:XX AWST | 📏 **Distance:** XXXm
-🎯 **Composite Score:** XX/25 | 💰 **Win Odds:** $X.XX | 📦 **Box:** X
-🌦️ **Track:** Condition | 📊 **Analysis Score:** X.X/10
-✅ **Status:** Still to run | 🏆 **BET TYPE:** WIN
+**SUMMARY TABLE - TOP 5 BETTING OPPORTUNITIES:**
 
-💡 **Analysis:** [100-word analysis covering: Why its Best Time at this trip is superior, How its First-Sectional Speed and Box Draw align, Relevant Form notes (class drop, trainer heat, spell), Race Dynamics summary (pace forecast, congestion risk), Any public vet/injury alerts or fitness notes. Remove all links from analysis make it easy for people to understand.]
-🔍 **Sources:** [Official websites where data was verified]
+| Race | Track | Dog Name | Box | Win% | Place% | Market | Fair | Potential Value | Bet Type | Units |
+|------|-------|----------|-----|------|--------|--------|------|-------|----------|-------|
+| R1   | XXXX  | DOG NAME | X   | XX%  | XX%    | $X.XX  | $X.XX| +XX%  | Win/EW   | 0.5-1.5 |
+
+**DETAILED ANALYSIS:**
+
+🐕 **DOG NAME** | Track Name | Race X
+⏰ **Race Time:** XX:XX AWST | 📏 **Distance:** XXXm | 📦 **Box:** X
+🎯 **Win Probability:** XX% | 🎲 **Place Probability:** XX%
+💰 **Market Odds:** $X.XX | � **Fair Odds:** $X.XX | � **Potential Value:** XX%
+🏆 **Bet Type:** [Win/Each-Way/Place] | 💵 **Stake:** [0.5-1.5 units]
+
+� **Monte Carlo Results:** [Win %: XX%, Place %: XX%, Variance: XX]
+📈 **Key Metrics:**
+- Early Speed Rank: X/X (sectional: XX.XX)
+- Form Rating: XX/100 (last 5 starts)
+- Track/Distance: XX% strike rate (XX starts)
+- Box Draw: +XX% advantage
+- Trainer Form: XX% last 30 days
+
+� **Analysis:** [Detailed reasoning covering early speed advantage, form trends, track suitability, market value, risk factors]
+
+🔍 **Data Verification:** [Confirm data sources and cross-references used]
 
 ---
 
-ANTI-FICTION REQUIREMENTS:
-- Do NOT create fictional greyhound names like "RAPID FIRE", "BOXCAR BULLET", "RAILWAY RAMPAGE"
-- Do NOT create fictional race times or track names
-- Do NOT create fictional trainer names
-- If you find race cards with real greyhound names, PROCEED with analysis using available data
-- If you cannot find any race cards or greyhound names, then state "No race card data found for {target_date_str}"
-- REAL NAMES ONLY - but use standard race card and form guide information for analysis
-- ACCEPTABLE DATA: Official race cards, published form guides, trainer statistics, track information
-- NOT REQUIRED: Live odds, real-time sectionals, minute-by-minute updates
+REQUIREMENTS:
+- Find and use real greyhound names from official race cards and form guides
+- Cross-reference information across multiple approved sources  
+- If real data is available, provide comprehensive analysis
+- If very limited data is found, provide what you can with clear notes about limitations
+- STAKE LIMITS: Maximum 1.5 units per selection. Use 0.5-1.5 units based on confidence:
+  * 1.5 units: Extremely confident selections with strong value
+  * 1.0 units: Good confident selections 
+  * 0.5 units: Speculative or lower confidence selections
+- CLEAN OUTPUT: ONLY show the final tip selections in the specified format. NO analysis explanations, research steps, or methodology details.
 
-BEGIN COMPREHENSIVE WEB SEARCH FOR AUSTRALIAN GREYHOUND RACING DATA FOR {target_date_str} (TODAY ONLY) - USE AVAILABLE RACE CARDS AND FORM GUIDES FOR ANALYSIS NOW."""
+⚠️ NOTE: Focus on finding real greyhound racing data for {target_date_str}. Use the approved sources to locate actual race meetings and runners. If {target_date_str} has no meetings or very limited meetings, also search for races on the next 1-2 days and mention when those races are.
+
+IMPORTANT: If you find no races for {target_date_str}, search for:
+- "greyhound racing meetings Australia {datetime.now().strftime('%Y-%m-%d')}" (today)
+- "greyhound racing meetings Australia tomorrow" 
+- "upcoming greyhound races Australia this week"
+
+And provide information about when the next meetings are scheduled.
+
+BEGIN ANALYSIS - PROVIDE ONLY CLEAN TIP SELECTIONS WITH REAL DOG NAMES (NO ANALYSIS TEXT)."""
 
     try:
-        # Generate greyhound tips using REAL web search + deep thinking (like working horse bot)
+        # Generate greyhound tips using REAL web search + deep thinking
         response = await asyncio.to_thread(
             client.models.generate_content,
             model="gemini-2.5-pro",
@@ -592,6 +634,33 @@ BEGIN COMPREHENSIVE WEB SEARCH FOR AUSTRALIAN GREYHOUND RACING DATA FOR {target_
         
         final_answer = '\n'.join(cleaned_lines)
         
+        # Filter out analysis text and keep only the tips
+        filtered_lines = []
+        in_tips_section = False
+        
+        for line in final_answer.split('\n'):
+            # Start capturing when we see tip format
+            if line.strip().startswith('🐕 **') and '|' in line:
+                in_tips_section = True
+                filtered_lines.append(line)
+            # Keep lines that are part of tips (time, probabilities, etc.)
+            elif in_tips_section and any(marker in line for marker in ['⏰', '🎯', '💰', '🏆', '💡']):
+                filtered_lines.append(line)
+            # Keep empty lines within tips for formatting
+            elif in_tips_section and line.strip() == '':
+                filtered_lines.append(line)
+            # Stop capturing when we hit analysis sections
+            elif line.strip().startswith(('STEP', 'SUMMARY TABLE', 'DETAILED ANALYSIS', 'CURRENT MARKET', 'DATA-DRIVEN')):
+                in_tips_section = False
+            # Include title lines
+            elif 'TOP GREYHOUND SELECTIONS' in line or line.strip().startswith('**🐕'):
+                filtered_lines.append(line)
+                in_tips_section = True
+        
+        # If we found filtered content, use it; otherwise use original
+        if len(filtered_lines) > 2:  # More than just title
+            final_answer = '\n'.join(filtered_lines)
+        
         # Add disclaimer at the bottom
         disclaimer = """
 
@@ -599,20 +668,41 @@ BEGIN COMPREHENSIVE WEB SEARCH FOR AUSTRALIAN GREYHOUND RACING DATA FOR {target_
         
         full_response = final_answer + disclaimer
         
-        # Check if no races were found for today
-        if "no greyhound race" in full_response.lower() or "no verifiable greyhound race data" in full_response.lower():
-            return f"ℹ️ **NO RACES TODAY**: {full_response}"
-        
-        # Check for common fictional indicators (but be less restrictive than before)
-        suspicious_patterns = [
-            "rapid fire", "boxcar bullet", "railway rampage"
+        # Check if response explicitly says no data found or if it's mostly empty
+        no_data_indicators = [
+            "no real greyhound data found",
+            "no real data available", 
+            "no verifiable greyhound race data",
+            "unable to find real race data",
+            "no greyhound meetings",
+            "no races scheduled"
         ]
         
-        suspicious_count = sum(1 for pattern in suspicious_patterns if pattern.lower() in full_response.lower())
+        no_data_found = any(indicator.lower() in full_response.lower() for indicator in no_data_indicators)
         
-        # Only reject if multiple suspicious patterns detected
-        if suspicious_count >= 2:
-            return f"⚠️ **FICTIONAL DATA DETECTED**: The AI may have generated fake greyhound names. Please verify selections against official greyhound racing websites before using."
+        # Check if response is mostly just the disclaimer (indicating no real content)
+        content_without_disclaimer = full_response.replace(disclaimer, "").strip()
+        is_mostly_empty = len(content_without_disclaimer) < 100
+        
+        # If no data found or content is mostly empty, return appropriate message
+        if no_data_found or is_mostly_empty:
+            if is_mostly_empty and not no_data_found:
+                return f"""🐕 Greyhound Racing Tips - Daily Analysis
+
+NO GREYHOUND MEETINGS FOUND FOR {target_date_str.upper()}
+
+As an expert greyhound racing analyst, I must inform you that there appear to be no greyhound race meetings scheduled for {target_date_str}. This is common on certain days of the week, particularly Mondays.
+
+🔍 **RECOMMENDED ACTION:**
+- Check tomorrow's race meetings for betting opportunities
+- Most Australian tracks race Tuesday through Saturday
+- Sunday meetings vary by track and season
+
+I will continue monitoring for race meetings and provide analysis when official data becomes available.
+
+⚠️ **DISCLAIMER**: Please check with official racing websites for the most current meeting schedules. Gamble responsibly and within your means."""
+            else:
+                return full_response  # Return the no-data message as is
         
         return full_response
         
@@ -668,50 +758,94 @@ async def main():
     ensure_data_dir_and_files()
     
     mode = os.environ.get('RUN_MODE', 'once').lower()
-    if mode == 'schedule':
-        # Simple scheduler loop checking Perth time every minute
+    if mode == 'research':
+        # Research mode - run analysis but don't send to Discord
+        try:
+            print("Running in research mode - analysis only, no Discord posting...")
+            await research_analysis_only()
+            print("Research analysis completed.")
+        except Exception as e:
+            print(f"Error in research mode: {str(e)}")
+    elif mode == 'schedule':
+        # Improved scheduler with precise timing and better reliability
         print("Running in scheduler mode: will post at 07:00 and 19:00 AWST daily")
-        last_run_date_morning = None
-        last_run_date_evening = None
         
-        # Check if we're starting in schedule mode - don't generate tips immediately
-        perth_now = datetime.now(PERTH_TZ)
-        current_time = perth_now.time()
+        # Track what we've run with persistent file storage
+        status_file = os.path.join(DATA_DIR, 'scheduler_status.json')
         
-        if current_time < dtime(7, 0):
-            print(f"Schedule mode started before 7AM ({current_time.strftime('%H:%M')}). Waiting until 7AM for first tips generation.")
-        elif current_time < dtime(19, 0):
-            print(f"Schedule mode started after 7AM but before 7PM ({current_time.strftime('%H:%M')}). Tips already generated today. Waiting until 7PM for results analysis, then 7AM tomorrow for next tips.")
-            # Set today as already run for morning to prevent duplicate tips
-            last_run_date_morning = perth_now.date()
-        else:
-            print(f"Schedule mode started after 7PM ({current_time.strftime('%H:%M')}). Both runs already completed today. Waiting until 7AM tomorrow for next tips.")
-            # Set today as already run for both morning and evening
-            last_run_date_morning = perth_now.date()
-            last_run_date_evening = perth_now.date()
+        def load_scheduler_status():
+            try:
+                if os.path.exists(status_file):
+                    with open(status_file, 'r') as f:
+                        return json.load(f)
+                return {'last_morning_run': None, 'last_evening_run': None}
+            except:
+                return {'last_morning_run': None, 'last_evening_run': None}
+        
+        def save_scheduler_status(status):
+            try:
+                with open(status_file, 'w') as f:
+                    json.dump(status, f)
+            except Exception as e:
+                print(f"Error saving scheduler status: {e}")
+        
+        scheduler_status = load_scheduler_status()
+        
+        print(f"Loaded scheduler status: {scheduler_status}")
         
         try:
             while True:
                 now_perth = datetime.now(PERTH_TZ)
-                today = now_perth.date()
+                today_str = now_perth.strftime('%Y-%m-%d')
                 current_time = now_perth.time()
+                current_hour = current_time.hour
+                current_minute = current_time.minute
                 
-                # 7:00 AM run (only if we haven't run today)
-                if current_time >= dtime(7, 0) and (last_run_date_morning != today):
-                    print("Triggering 7AM greyhound tips run...")
-                    tips = await generate_greyhound_tips()
-                    await send_webhook_message(tips)
-                    last_run_date_morning = today
+                # Check if it's 7:00 AM (07:00-07:05 window for reliability)
+                if (current_hour == 7 and current_minute < 5 and 
+                    scheduler_status.get('last_morning_run') != today_str):
+                    
+                    print(f"🌅 Triggering 7AM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
+                    try:
+                        tips = await generate_greyhound_tips()
+                        await send_webhook_message(tips, title="🌅 Daily Greyhound Tips - 7AM Perth")
+                        
+                        # Update status
+                        scheduler_status['last_morning_run'] = today_str
+                        save_scheduler_status(scheduler_status)
+                        print(f"✅ 7AM tips posted successfully for {today_str}")
+                        
+                    except Exception as e:
+                        print(f"❌ Error in 7AM run: {str(e)}")
                 
-                # 7:00 PM run (only if we haven't run today)
-                if current_time >= dtime(19, 0) and (last_run_date_evening != today):
-                    print("Triggering 7PM greyhound results analysis run...")
-                    await analyze_results_and_learn()
-                    last_run_date_evening = today
+                # Check if it's 7:00 PM (19:00-19:05 window for reliability)
+                elif (current_hour == 19 and current_minute < 5 and 
+                      scheduler_status.get('last_evening_run') != today_str):
+                    
+                    print(f"🌇 Triggering 7PM greyhound results analysis at {now_perth.strftime('%H:%M AWST')}...")
+                    try:
+                        await analyze_results_and_learn()
+                        
+                        # Update status
+                        scheduler_status['last_evening_run'] = today_str
+                        save_scheduler_status(scheduler_status)
+                        print(f"✅ 7PM analysis completed successfully for {today_str}")
+                        
+                    except Exception as e:
+                        print(f"❌ Error in 7PM run: {str(e)}")
                 
-                await asyncio.sleep(60)
+                # Debug output every 30 minutes
+                if current_minute in [0, 30]:
+                    next_morning = "today" if scheduler_status.get('last_morning_run') != today_str else "tomorrow"
+                    next_evening = "today" if scheduler_status.get('last_evening_run') != today_str else "tomorrow"
+                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next morning run: {next_morning} at 07:00, Next evening run: {next_evening} at 19:00")
+                
+                await asyncio.sleep(60)  # Check every minute
+                
         except KeyboardInterrupt:
-            print("Scheduler stopped")
+            print("Scheduler stopped by user")
+        except Exception as e:
+            print(f"Scheduler error: {str(e)}")
     else:
         # One-off immediate run (morning tips)
         try:
