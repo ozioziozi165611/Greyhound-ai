@@ -780,24 +780,60 @@ Wednesday is the BUSIEST greyhound racing day in Australia. Multiple venues typi
         
         full_response = final_answer + disclaimer
         
-        # Check if response explicitly says no data found - but be more specific
+        # Debug output to understand what's happening
+        print(f"📊 DEBUG: Response length: {len(full_response)} characters")
+        print(f"📊 DEBUG: Content without disclaimer length: {len(full_response.replace(disclaimer, '').strip())} characters")
+        print(f"📊 DEBUG: First 200 chars: {full_response[:200]}...")
+        
+        # Check if response explicitly says no data found - but be very specific
         specific_no_data_indicators = [
             "no greyhound meetings found",
             "no race meetings scheduled", 
             "no races scheduled for august 14",
             "unable to find any greyhound race data for august 14",
-            "no australian greyhound meetings on august 14"
+            "no australian greyhound meetings on august 14",
+            "I apologize, but I wasn't able to find any greyhound race data",
+            "no specific race meetings",
+            "unable to find current race data",
+            "I don't have access to real-time",
+            "I cannot provide real-time",
+            "I don't have current access"
         ]
         
-        # Only trigger no-data response if explicitly stated AND content is very short
+        # Check for fake/generic data indicators
+        fake_data_indicators = [
+            "Example Dog Name",
+            "SAMPLE GREYHOUND",
+            "Fictional Runner",
+            "Demo Track",
+            "Sample Race",
+            "placeholder",
+            "example greyhound",
+            "hypothetical",
+            "XX:XX AWST",  # Template time not filled
+            "X.XX",        # Template odds not filled
+            "XXX%",        # Template percentage not filled
+            "Box X",       # Template box not filled
+            "Track Name"   # Generic track name
+        ]
+        
+        # Only trigger no-data response if explicitly stated OR contains fake data
         explicit_no_data = any(indicator.lower() in full_response.lower() for indicator in specific_no_data_indicators)
+        contains_fake_data = any(indicator in full_response for indicator in fake_data_indicators)
         
         # Check if response is mostly just the disclaimer (indicating no real content)
         content_without_disclaimer = full_response.replace(disclaimer, "").strip()
-        is_mostly_empty = len(content_without_disclaimer) < 50  # Much lower threshold
+        is_truly_empty = len(content_without_disclaimer) < 100  # Increased threshold to catch more fake data
         
-        # Be more conservative - only show no data message if content is truly empty
-        if is_mostly_empty:
+        # Show no data message if any of these conditions are met
+        if is_truly_empty or explicit_no_data or contains_fake_data:
+            if is_truly_empty:
+                print("⚠️ DEBUG: Detected empty response")
+            if explicit_no_data:
+                print("⚠️ DEBUG: Detected explicit no-data message")
+            if contains_fake_data:
+                print("⚠️ DEBUG: Detected fake/template data in response")
+            
             return f"""🐕 Greyhound Racing Tips - Daily Analysis
 
 SEARCH ISSUE DETECTED FOR {target_date_str.upper()}
@@ -818,7 +854,8 @@ I will continue monitoring for race meetings and provide analysis when data beco
 
 ⚠️ **DISCLAIMER**: Please check with official racing websites for the most current meeting schedules. Gamble responsibly and within your means."""
         
-        # If we have any substantial content, return it even if it seems incomplete
+        # Always return the actual content unless filtered above
+        print("✅ DEBUG: Returning actual analysis content (passed all filters)")
         return full_response
         
     except asyncio.TimeoutError:
