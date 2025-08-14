@@ -242,7 +242,6 @@ async def generate_greyhound_tips():
     
     if force_current_date:
         # Force use real current date (2024) instead of system date
-        from datetime import datetime
         real_now = datetime(2024, 8, 14, perth_now.hour, perth_now.minute, perth_now.second)
         target_date_str = real_now.strftime("%B %d, %Y")
         target_date_search = real_now.strftime("%Y-%m-%d")
@@ -511,7 +510,6 @@ async def analyze_greyhound_racing_day(target_date_str, target_date_search, curr
     """Analyze TODAY only (Perth date) with comprehensive greyhound analysis"""
     
     # Check if we're analyzing a future date
-    from datetime import datetime
     try:
         target_datetime = datetime.strptime(target_date_search, "%Y-%m-%d")
         today_datetime = datetime.now()
@@ -887,7 +885,6 @@ Wednesday is the BUSIEST greyhound racing day in Australia. Multiple venues typi
                 print("⚠️ DEBUG: Detected fake/template data in response")
             
             # Check if this is a future date issue
-            from datetime import datetime
             try:
                 target_datetime = datetime.strptime(target_date_search, "%Y-%m-%d")
                 today_datetime = datetime.now()
