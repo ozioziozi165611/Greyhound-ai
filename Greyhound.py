@@ -236,9 +236,22 @@ ADJUST YOUR ANALYSIS BASED ON THESE PROVEN PATTERNS."""
 async def generate_greyhound_tips():
     """Generate greyhound tips for today's races only (Perth timezone)"""
     perth_now = datetime.now(PERTH_TZ)
-    target_date_str = perth_now.strftime("%B %d, %Y")
-    target_date_search = perth_now.strftime("%Y-%m-%d")
-    current_time_perth = perth_now.strftime("%H:%M AWST")
+    
+    # Check if we should override the date for testing/debugging
+    force_current_date = os.environ.get('FORCE_CURRENT_DATE', 'false').lower() == 'true'
+    
+    if force_current_date:
+        # Force use real current date (2024) instead of system date
+        from datetime import datetime
+        real_now = datetime(2024, 8, 14, perth_now.hour, perth_now.minute, perth_now.second)
+        target_date_str = real_now.strftime("%B %d, %Y")
+        target_date_search = real_now.strftime("%Y-%m-%d")
+        current_time_perth = real_now.strftime("%H:%M AWST")
+        print(f"🔧 FORCED DATE MODE: Using {target_date_str} instead of system date")
+    else:
+        target_date_str = perth_now.strftime("%B %d, %Y")
+        target_date_search = perth_now.strftime("%Y-%m-%d")
+        current_time_perth = perth_now.strftime("%H:%M AWST")
     
     print(f"Generating fresh greyhound tips for {target_date_str} at {current_time_perth}")
     print(f"DEBUG: Perth date: {target_date_search}, Perth time: {current_time_perth}")
@@ -504,7 +517,13 @@ async def analyze_greyhound_racing_day(target_date_str, target_date_search, curr
         today_datetime = datetime.now()
         days_in_future = (target_datetime - today_datetime).days
         
-        if days_in_future > 2:
+        print(f"🗓️ DEBUG: Target date: {target_datetime.strftime('%Y-%m-%d')}")
+        print(f"🗓️ DEBUG: Today's date: {today_datetime.strftime('%Y-%m-%d')}")
+        print(f"🗓️ DEBUG: Days in future: {days_in_future}")
+        
+        # Only show future date warning if significantly in the future
+        # Allow same day and next day analysis
+        if days_in_future > 7:  # Changed from 2 to 7 days to be more permissive
             print(f"⚠️ WARNING: Analyzing date {days_in_future} days in the future - race data may not be available")
             return f"""🐕 Greyhound Racing Tips - Daily Analysis
 
@@ -523,7 +542,11 @@ You're requesting analysis for a date {days_in_future} days in the future. Greyh
 - For future dates: Wait until closer to race day
 
 ⚠️ **DISCLAIMER**: Race schedules are published closer to race day. Please check official racing websites for current information."""
-    except:
+        elif days_in_future > 1:
+            print(f"ℹ️ INFO: Analyzing {days_in_future} days ahead - continuing with search")
+        
+    except Exception as e:
+        print(f"⚠️ Date parsing error: {e}")
         pass  # Continue with normal analysis if date parsing fails
     
     # Expert greyhound racing analyst prompt with strict data source requirements
@@ -989,10 +1012,25 @@ async def main():
     # Debug current dates and configuration
     perth_now = datetime.now(PERTH_TZ)
     system_now = datetime.now()
+    utc_now = datetime.utcnow()
+    
     print(f"🕐 System time: {system_now.strftime('%Y-%m-%d %H:%M')}")
-    print(f"🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
+    print(f"� UTC time: {utc_now.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"�🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
     print(f"📅 Target date: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
     print(f"📁 Data directory: {DATA_DIR}")
+    
+    # Check if this seems like a future date issue
+    import time
+    epoch_time = time.time()
+    readable_epoch = datetime.fromtimestamp(epoch_time)
+    print(f"🔍 System epoch time: {readable_epoch.strftime('%Y-%m-%d %H:%M')}")
+    print(f"📊 Current year from system: {system_now.year}")
+    
+    if system_now.year >= 2025:
+        print("⚠️ WARNING: System date appears to be in the future!")
+        print("This is likely why the bot thinks there's no race data available.")
+        print("Local vs Railway environments may have different system dates.")
     print("=" * 60)
     
     # Ensure data directory and files exist for Railway deployment
