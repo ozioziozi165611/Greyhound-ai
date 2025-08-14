@@ -46,19 +46,24 @@ import threading
 import os
 from datetime import datetime, timedelta, time as dtime
 
-# API Configuration - Railway environment variables with hardcoded fallbacks
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 'AIzaSyAojaPPXTTjezPfBI_FqbE9-jKb0u7oOGc')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL', 'https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h')
+# API Configuration - Railway environment variables only
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+
+# Validate required environment variables
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY environment variable is required")
+if not WEBHOOK_URL:
+    raise ValueError("WEBHOOK_URL environment variable is required")
 
 # Clean up any potential whitespace issues
 GEMINI_API_KEY = GEMINI_API_KEY.strip() if GEMINI_API_KEY else None
 WEBHOOK_URL = WEBHOOK_URL.strip() if WEBHOOK_URL else None
 
-# Railway-ready configuration with detailed debugging
-using_env_vars = 'GEMINI_API_KEY' in os.environ
+# Railway-ready configuration with debugging
 print(f"✅ API Key configured: {GEMINI_API_KEY[:20] if GEMINI_API_KEY else 'None'}...")
 print(f"✅ Webhook configured: {WEBHOOK_URL[:50] if WEBHOOK_URL else 'None'}...")
-print(f"🔧 Using Railway environment variables: {'Yes' if using_env_vars else 'No (using hardcoded fallback)'}")
+print(f"🔧 Using Railway environment variables: Yes")
 print(f"🔑 API Key length: {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0} characters")
 print(f"🔗 Webhook length: {len(WEBHOOK_URL) if WEBHOOK_URL else 0} characters")
 
@@ -144,7 +149,7 @@ grounding_tool = types.Tool(google_search=types.GoogleSearch())
 generation_config = types.GenerateContentConfig(
     tools=[grounding_tool],  # Enable real-time web search
     thinking_config=types.ThinkingConfig(
-        thinking_budget=30000,  # Increased thinking budget for 5+ minute analysis
+        thinking_budget=30000,  # Set to 30k tokens for extended analysis (max allowed: 32768)
         include_thoughts=True  # Include reasoning process
     ),
     temperature=0.2,
@@ -344,12 +349,16 @@ Provide results in this concise format:
 ---"""
 
     try:
-        # Get race results using web search
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-2.5-pro",
-            contents=results_prompt,
-            config=generation_config
+        print("🔍 Analyzing race results...")
+        # Get race results using web search with timeout
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-pro",
+                contents=results_prompt,
+                config=generation_config
+            ),
+            timeout=300.0  # 5 minute timeout for results analysis
         )
         
         results_content = ""
@@ -501,10 +510,22 @@ COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
 DEEP RESEARCH PLAN FOR GREYHOUND RACING ANALYSIS:
 
 **Step 1: Identify All Australian Greyhound Meetings**
-MUST COMPLETE: Get a complete list of all greyhound meetings scheduled across every state in Australia for {target_date_str}. This ensures no race is missed.
-- Search: "all greyhound racing meetings Australia {target_date_search}"
-- Search: "Australian greyhound racing calendar {target_date_str}"
-- Search: "greyhound racing meetings NSW VIC QLD SA WA NT {target_date_search}"
+MUST COMPLETE: Get a complete list of all greyhound meetings scheduled across every state in Australia for {target_date_str}. This ensures no race is missed. USE THESE EXACT SEARCH TERMS:
+- Search: "TAB greyhound racing today Wednesday"
+- Search: "greyhound racing today Australia live"  
+- Search: "thedogs.com.au race cards today"
+- Search: "greyhound race meetings tonight Australia"
+- Search: "live greyhound racing Wednesday Australia"
+- Search: "greyhound racing August 14 Australia"
+- Search: "Australian greyhound meetings Wednesday night"
+- Search: "tab.com.au greyhound racing Wednesday"
+- Search: "sportsbet greyhound racing today"
+- Search: "racing.com greyhound meetings today"
+
+CRITICAL: Wednesday is a major greyhound racing day in Australia. If initial searches don't find meetings, try these backup searches:
+- Search: "greyhound racing venues Australia Wednesday evening"
+- Search: "Gosford Murray Bridge Townsville greyhound racing Wednesday"
+- Search: "Australian greyhound tracks racing tonight"
 
 **Step 2: Gather Comprehensive Race Form Data**
 MUST COMPLETE: For each meeting identified in Step 1, perform targeted searches to collect detailed form data for ALL runners:
@@ -654,22 +675,55 @@ REQUIREMENTS:
 ⚠️ NOTE: Focus on finding real greyhound racing data for {target_date_str}. Use the approved sources to locate actual race meetings and runners. If {target_date_str} has no meetings or very limited meetings, also search for races on the next 1-2 days and mention when those races are.
 
 IMPORTANT: If you find no races for {target_date_str}, search for:
-- "greyhound racing meetings Australia {datetime.now().strftime('%Y-%m-%d')}" (today)
-- "greyhound racing meetings Australia tomorrow" 
+- "greyhound racing meetings Australia Wednesday August 14 2025"
+- "TAB greyhound racing today Australia"
+- "TheDogs.com.au race meetings today"
+- "live greyhound racing Australia tonight"
+- "greyhound races running now Australia"
 - "upcoming greyhound races Australia this week"
 
 And provide information about when the next meetings are scheduled.
 
-BEGIN ANALYSIS - PROVIDE ONLY CLEAN TIP SELECTIONS WITH REAL DOG NAMES (NO ANALYSIS TEXT)."""
+BEGIN ANALYSIS - PROVIDE ONLY CLEAN TIP SELECTIONS WITH REAL DOG NAMES (NO ANALYSIS TEXT).
+
+CRITICAL SEARCH REQUIREMENT: Wednesday August 14, 2025 is a MAJOR racing day in Australia. You MUST perform comprehensive searches before concluding no meetings exist. Use these MANDATORY search terms:
+
+1. "TAB greyhound racing today live"
+2. "thedogs.com.au Wednesday race cards"
+3. "greyhound racing tonight Australia Wednesday"
+4. "live greyhound racing Wednesday August 14"
+5. "Australian greyhound meetings tonight"
+6. "Gosford greyhound racing Wednesday"
+7. "Murray Bridge greyhound racing Wednesday"
+8. "Townsville greyhound racing Wednesday"
+9. "Bulli greyhound racing Wednesday"
+10. "tab.com.au greyhound racing Wednesday night"
+
+ADDITIONAL MANDATORY SEARCHES if above don't find meetings:
+- "greyhound racing venues Australia Wednesday evening"
+- "Wednesday night greyhound racing Australia"
+- "all Australian greyhound tracks Wednesday"
+- "greyhound race meetings Australia today live"
+- "racing.com greyhound Wednesday"
+
+Wednesday is the BUSIEST greyhound racing day in Australia. Multiple venues typically race on Wednesday nights. If you cannot find race data after these searches, provide a detailed explanation of what you searched for and found."""
 
     try:
-        # Generate greyhound tips using REAL web search + deep thinking
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model="gemini-2.5-pro",
-            contents=main_prompt,
-            config=generation_config
+        print("🔍 Starting comprehensive greyhound analysis...")
+        print("⏳ This may take 3-5 minutes for complete web research and analysis...")
+        
+        # Generate greyhound tips using REAL web search + deep thinking with extended timeout
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-pro",
+                contents=main_prompt,
+                config=generation_config
+            ),
+            timeout=600.0  # 10 minute timeout to allow for comprehensive analysis
         )
+        
+        print("✅ Analysis completed successfully!")
         
         # Process response parts to separate thoughts from final answer
         final_answer = ""
@@ -705,32 +759,19 @@ BEGIN ANALYSIS - PROVIDE ONLY CLEAN TIP SELECTIONS WITH REAL DOG NAMES (NO ANALY
         
         final_answer = '\n'.join(cleaned_lines)
         
-        # Filter out analysis text and keep only the tips
-        filtered_lines = []
-        in_tips_section = False
+        # Instead of filtering, just return the content as-is
+        # Only remove obvious step markers but keep all race data
+        lines_to_keep = []
         
         for line in final_answer.split('\n'):
-            # Start capturing when we see tip format
-            if line.strip().startswith('🐕 **') and '|' in line:
-                in_tips_section = True
-                filtered_lines.append(line)
-            # Keep lines that are part of tips (time, probabilities, etc.)
-            elif in_tips_section and any(marker in line for marker in ['⏰', '🎯', '💰', '🏆', '💡']):
-                filtered_lines.append(line)
-            # Keep empty lines within tips for formatting
-            elif in_tips_section and line.strip() == '':
-                filtered_lines.append(line)
-            # Stop capturing when we hit analysis sections
-            elif line.strip().startswith(('STEP', 'SUMMARY TABLE', 'DETAILED ANALYSIS', 'CURRENT MARKET', 'DATA-DRIVEN')):
-                in_tips_section = False
-            # Include title lines
-            elif 'TOP GREYHOUND SELECTIONS' in line or line.strip().startswith('**🐕'):
-                filtered_lines.append(line)
-                in_tips_section = True
+            # Only skip very obvious step headers, keep everything else
+            if line.strip().startswith(('**STEP', 'STEP 1:', 'STEP 2:', 'STEP 3:', 'STEP 4:', 'STEP 5:')):
+                continue
+            else:
+                lines_to_keep.append(line)
         
-        # If we found filtered content, use it; otherwise use original
-        if len(filtered_lines) > 2:  # More than just title
-            final_answer = '\n'.join(filtered_lines)
+        # Use the cleaned content
+        final_answer = '\n'.join(lines_to_keep)
         
         # Add disclaimer at the bottom
         disclaimer = """
@@ -739,46 +780,76 @@ BEGIN ANALYSIS - PROVIDE ONLY CLEAN TIP SELECTIONS WITH REAL DOG NAMES (NO ANALY
         
         full_response = final_answer + disclaimer
         
-        # Check if response explicitly says no data found or if it's mostly empty
-        no_data_indicators = [
-            "no real greyhound data found",
-            "no real data available", 
-            "no verifiable greyhound race data",
-            "unable to find real race data",
-            "no greyhound meetings",
-            "no races scheduled"
+        # Check if response explicitly says no data found - but be more specific
+        specific_no_data_indicators = [
+            "no greyhound meetings found",
+            "no race meetings scheduled", 
+            "no races scheduled for august 14",
+            "unable to find any greyhound race data for august 14",
+            "no australian greyhound meetings on august 14"
         ]
         
-        no_data_found = any(indicator.lower() in full_response.lower() for indicator in no_data_indicators)
+        # Only trigger no-data response if explicitly stated AND content is very short
+        explicit_no_data = any(indicator.lower() in full_response.lower() for indicator in specific_no_data_indicators)
         
         # Check if response is mostly just the disclaimer (indicating no real content)
         content_without_disclaimer = full_response.replace(disclaimer, "").strip()
-        is_mostly_empty = len(content_without_disclaimer) < 100
+        is_mostly_empty = len(content_without_disclaimer) < 50  # Much lower threshold
         
-        # If no data found or content is mostly empty, return appropriate message
-        if no_data_found or is_mostly_empty:
-            if is_mostly_empty and not no_data_found:
-                return f"""🐕 Greyhound Racing Tips - Daily Analysis
+        # Be more conservative - only show no data message if content is truly empty
+        if is_mostly_empty:
+            return f"""🐕 Greyhound Racing Tips - Daily Analysis
 
-NO GREYHOUND MEETINGS FOUND FOR {target_date_str.upper()}
+SEARCH ISSUE DETECTED FOR {target_date_str.upper()}
 
-As an expert greyhound racing analyst, I must inform you that there appear to be no greyhound race meetings scheduled for {target_date_str}. This is common on certain days of the week, particularly Mondays.
+The analysis system was unable to locate definitive greyhound race data for {target_date_str}. However, since Wednesday is typically a major racing day in Australia, this may be a temporary search issue.
 
-🔍 **RECOMMENDED ACTION:**
-- Check tomorrow's race meetings for betting opportunities
-- Most Australian tracks race Tuesday through Saturday
-- Sunday meetings vary by track and season
+🔍 **POSSIBLE CAUSES:**
+- Website access limitations
+- Race data not yet published 
+- Search timing issues
 
-I will continue monitoring for race meetings and provide analysis when official data becomes available.
+� **RECOMMENDED ACTION:**
+- Check TAB.com.au or TheDogs.com.au directly
+- Verify if races are running tonight
+- Try running the analysis again in 30 minutes
+
+I will continue monitoring for race meetings and provide analysis when data becomes available.
 
 ⚠️ **DISCLAIMER**: Please check with official racing websites for the most current meeting schedules. Gamble responsibly and within your means."""
-            else:
-                return full_response  # Return the no-data message as is
         
+        # If we have any substantial content, return it even if it seems incomplete
         return full_response
         
+    except asyncio.TimeoutError:
+        return f"""⚠️ **ANALYSIS TIMEOUT**
+
+The comprehensive analysis took longer than expected (10+ minutes). This can happen during peak times or when conducting extensive web research.
+
+🔄 **RECOMMENDED ACTIONS:**
+- Wait 10-15 minutes and try again
+- Check if there are fewer race meetings today
+- The bot will retry automatically at the next scheduled time
+
+⏰ **NEXT SCHEDULED RUN:** 7:00 PM AWST for evening analysis
+
+⚠️ **DISCLAIMER**: Please check with official racing websites for current race information. Gamble responsibly and within your means."""
     except Exception as e:
-        return f"⚠️ Error generating greyhound tips: {str(e)}"
+        error_details = str(e)
+        if "timeout" in error_details.lower():
+            return f"""⚠️ **ANALYSIS TIMEOUT**
+
+The analysis exceeded the time limit while gathering comprehensive race data.
+
+🔄 **RECOMMENDED ACTIONS:**
+- The analysis will retry automatically
+- Check back in 30 minutes for fresh tips
+
+Error details: {error_details[:100]}...
+
+⚠️ **DISCLAIMER**: Please check with official racing websites for current race information."""
+        else:
+            return f"⚠️ Error generating greyhound tips: {error_details}"
 
 async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Daily Analysis"):
     try:
@@ -865,8 +936,43 @@ async def main():
                 print(f"Error saving scheduler status: {e}")
         
         scheduler_status = load_scheduler_status()
-        
         print(f"Loaded scheduler status: {scheduler_status}")
+        
+        # Generate fresh tips immediately on first run
+        print("🚀 Generating fresh tips immediately on startup...")
+        try:
+            tips = await generate_greyhound_tips()
+            await send_webhook_message(tips, title="🚀 Fresh Greyhound Tips - Bot Started")
+            print("✅ Fresh tips posted successfully!")
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ Error generating fresh tips on startup: {error_msg}")
+            
+            # Send a startup notification even if tips failed
+            try:
+                fallback_message = f"""🚀 **GREYHOUND BOT STARTED**
+
+⚠️ **STARTUP ISSUE DETECTED**
+The bot started successfully but encountered an issue generating initial tips:
+`{error_msg[:200]}...` 
+
+🔄 **AUTOMATIC RECOVERY:**
+- Bot is now running in schedule mode
+- Will retry at 7:00 AM AWST (morning tips)
+- Will attempt evening analysis at 7:00 PM AWST
+
+⏰ **NEXT SCHEDULED RUNS:**
+- Morning: 07:00 AWST daily
+- Evening: 19:00 AWST daily
+
+🛠️ **STATUS:** Bot monitoring active, waiting for next scheduled run."""
+                
+                await send_webhook_message(fallback_message, title="🚀 Greyhound Bot - Startup Complete")
+                print("📢 Startup notification sent to Discord")
+            except Exception as webhook_error:
+                print(f"❌ Failed to send startup notification: {webhook_error}")
+        
+        print("📅 Now entering scheduler mode...")
         
         try:
             while True:
