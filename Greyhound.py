@@ -497,6 +497,35 @@ def extract_summary(tips_content):
 async def analyze_greyhound_racing_day(target_date_str, target_date_search, current_time_perth, learning_insights):
     """Analyze TODAY only (Perth date) with comprehensive greyhound analysis"""
     
+    # Check if we're analyzing a future date
+    from datetime import datetime
+    try:
+        target_datetime = datetime.strptime(target_date_search, "%Y-%m-%d")
+        today_datetime = datetime.now()
+        days_in_future = (target_datetime - today_datetime).days
+        
+        if days_in_future > 2:
+            print(f"⚠️ WARNING: Analyzing date {days_in_future} days in the future - race data may not be available")
+            return f"""🐕 Greyhound Racing Tips - Daily Analysis
+
+⏰ **FUTURE DATE WARNING: {target_date_str.upper()}**
+
+You're requesting analysis for a date {days_in_future} days in the future. Greyhound racing schedules are typically only published 1-2 days in advance.
+
+🗓️ **DATE CHECK:**
+- Target Date: {target_date_str}
+- Current Date: {today_datetime.strftime('%B %d, %Y')}
+- Days Ahead: {days_in_future}
+
+💡 **RECOMMENDATIONS:**
+- For today's races: Use current date analysis
+- For tomorrow's races: Check back this evening
+- For future dates: Wait until closer to race day
+
+⚠️ **DISCLAIMER**: Race schedules are published closer to race day. Please check official racing websites for current information."""
+    except:
+        pass  # Continue with normal analysis if date parsing fails
+    
     # Expert greyhound racing analyst prompt with strict data source requirements
     main_prompt = f"""You are an expert greyhound racing analyst and betting strategist. I will provide, or you will source, official race form data for all races scheduled for {target_date_str}.
 
@@ -833,6 +862,40 @@ Wednesday is the BUSIEST greyhound racing day in Australia. Multiple venues typi
                 print("⚠️ DEBUG: Detected explicit no-data message")
             if contains_fake_data:
                 print("⚠️ DEBUG: Detected fake/template data in response")
+            
+            # Check if this is a future date issue
+            from datetime import datetime
+            try:
+                target_datetime = datetime.strptime(target_date_search, "%Y-%m-%d")
+                today_datetime = datetime.now()
+                days_in_future = (target_datetime - today_datetime).days
+                
+                if days_in_future > 1:
+                    return f"""🐕 Greyhound Racing Tips - Daily Analysis
+
+⏰ **FUTURE DATE DETECTED: {target_date_str.upper()}**
+
+The analysis is targeting a date {days_in_future} days in the future. Greyhound race data is typically only available 1-2 days in advance.
+
+🔍 **LIKELY CAUSES:**
+- Race schedules not yet published for {target_date_str}
+- System date/timezone configuration issue
+- Racing calendars updated closer to race day
+
+💡 **RECOMMENDED ACTIONS:**
+- Check if today's date is correct: {datetime.now().strftime('%B %d, %Y')}
+- For immediate racing: Check TAB.com.au or TheDogs.com.au for today's races
+- For future dates: Wait until closer to race day for schedules to be published
+
+🗓️ **TYPICAL SCHEDULE AVAILABILITY:**
+- Today's races: Available all day
+- Tomorrow's races: Usually available by evening
+- 2+ days ahead: Often not yet published
+
+⚠️ **DISCLAIMER**: Please check with official racing websites for the most current meeting schedules. Gamble responsibly and within your means."""
+                
+            except:
+                pass  # If date parsing fails, use default message
             
             return f"""🐕 Greyhound Racing Tips - Daily Analysis
 
