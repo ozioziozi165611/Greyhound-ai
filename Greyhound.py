@@ -49,6 +49,8 @@ from datetime import datetime, timedelta, time as dtime
 # API Configuration - Railway environment variables only
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+# Override date for testing (format: YYYY-MM-DD, e.g., "2024-12-06")
+OVERRIDE_DATE = os.environ.get('OVERRIDE_DATE', None)
 
 # Validate required environment variables
 if not GEMINI_API_KEY:
@@ -138,6 +140,23 @@ def ensure_data_dir_and_files():
 
 # Perth timezone
 PERTH_TZ = pytz.timezone('Australia/Perth')
+
+def get_effective_date():
+    """Get the effective date for analysis - either override or current Perth date"""
+    if OVERRIDE_DATE:
+        try:
+            # Parse override date and apply Perth timezone
+            override_dt = datetime.strptime(OVERRIDE_DATE, '%Y-%m-%d')
+            # Create a timezone-aware datetime at noon Perth time
+            effective_dt = PERTH_TZ.localize(override_dt.replace(hour=12))
+            print(f"🔧 Using OVERRIDE_DATE: {OVERRIDE_DATE} -> {effective_dt.strftime('%B %d, %Y (%A)')}")
+            return effective_dt
+        except ValueError as e:
+            print(f"⚠️ Invalid OVERRIDE_DATE format '{OVERRIDE_DATE}': {e}")
+            print("Using current Perth date instead")
+    
+    # Default to current Perth time
+    return datetime.now(PERTH_TZ)
 
 # Initialize Gemini client with proper SDK
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -235,7 +254,7 @@ ADJUST YOUR ANALYSIS BASED ON THESE PROVEN PATTERNS."""
 
 async def generate_greyhound_tips():
     """Generate greyhound tips for today's races only (Perth timezone)"""
-    perth_now = datetime.now(PERTH_TZ)
+    perth_now = get_effective_date()  # Use effective date instead of current time
     
     # Always use dynamic "today" language instead of specific dates
     target_date_search = perth_now.strftime("%Y-%m-%d")
@@ -262,7 +281,7 @@ async def generate_greyhound_tips():
 
 async def research_analysis_only():
     """Generate research analysis without sending to Discord - for testing and verification"""
-    perth_now = datetime.now(PERTH_TZ)
+    perth_now = get_effective_date()  # Use effective date instead of current time
     current_time_perth = perth_now.strftime("%H:%M AWST")
     
     print(f"Generating research analysis for TODAY at {current_time_perth}")
@@ -498,12 +517,12 @@ async def analyze_greyhound_racing_day(current_time_perth, learning_insights):
     
     print(f"🔍 Starting comprehensive greyhound analysis for TODAY...")
     
-    # Get current date information for robust search
-    perth_now = datetime.now(PERTH_TZ)
-    date_today = perth_now.strftime("%Y-%m-%d")  # 2025-08-15
-    date_formatted = perth_now.strftime("%B %d, %Y")  # August 15, 2025
-    day_name = perth_now.strftime("%A")  # Thursday
-    day_short = perth_now.strftime("%a")  # Thu
+    # Get current date information for robust search using effective date
+    perth_now = get_effective_date()  # Use effective date instead of current time
+    date_today = perth_now.strftime("%Y-%m-%d")  # e.g., 2024-12-06
+    date_formatted = perth_now.strftime("%B %d, %Y")  # e.g., December 06, 2024
+    day_name = perth_now.strftime("%A")  # e.g., Friday
+    day_short = perth_now.strftime("%a")  # e.g., Fri
     
     print(f"📅 Date context: {date_formatted} ({day_name}) - {date_today}")
     
@@ -802,7 +821,7 @@ async def main():
     print("=" * 60)
     
     # Debug current dates and configuration
-    perth_now = datetime.now(PERTH_TZ)
+    perth_now = get_effective_date()  # Use effective date
     system_now = datetime.now()
     utc_now = datetime.utcnow()
     
