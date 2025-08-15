@@ -557,21 +557,23 @@ async def analyze_greyhound_racing_day(current_time_perth, learning_insights):
     main_prompt = f"""You are an expert greyhound racing analyst and betting strategist. I need you to analyze ALL greyhound races scheduled for TODAY across Australia.
 
 📅 **CURRENT DATE CONTEXT:**
-- Today's Date: {date_formatted} ({day_name})
-- ISO Date: {date_today}
+- Today's Date: {date_formatted} ({day_name}) - THIS IS TODAY, NOT A FUTURE DATE
+- ISO Date: {date_today} - THIS IS THE CURRENT DATE
 - Current Time: {current_time_perth} (Perth/AWST)
 - Day of Week: {day_name}
 
-Target Analysis: ALL greyhound races for {day_name} {date_formatted} that haven't started yet
+IMPORTANT: {date_formatted} is TODAY'S date. This is NOT a future date - this is the actual current date. Race data should be available for today's meetings.
+
+Target Analysis: ALL greyhound races for TODAY {day_name} {date_formatted} that haven't started yet
 
 {learning_insights}
 
-CRITICAL: Use REAL-TIME web search to find TODAY'S actual greyhound race meetings and runners. Do NOT generate fake or placeholder data.
+CRITICAL: Use REAL-TIME web search to find TODAY'S actual greyhound race meetings and runners. Do NOT generate fake or placeholder data. {date_formatted} is the CURRENT date, not a future date.
 
 COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
 
-**Step 1: Find ALL Australian Greyhound Meetings for {day_name} {date_formatted}**
-MUST COMPLETE: Search for ALL greyhound meetings scheduled across Australia for TODAY. USE THESE EXACT SEARCH TERMS WITH THE SPECIFIC DATE:
+**Step 1: Find ALL Australian Greyhound Meetings for TODAY {day_name} {date_formatted}**
+MUST COMPLETE: Search for ALL greyhound meetings scheduled across Australia for TODAY. THIS IS THE CURRENT DATE, NOT FUTURE. USE THESE EXACT SEARCH TERMS:
 
 PRIMARY SEARCHES:
 - Search: "greyhound racing {date_today} Australia"
@@ -580,9 +582,9 @@ PRIMARY SEARCHES:
 - Search: "{day_name} greyhound racing Australia {date_today}"
 - Search: "thedogs.com.au race cards {date_today}"
 - Search: "greyhound meetings {day_name} Australia"
+- Search: "greyhound racing today Australia" (since {date_today} IS today)
 
 BACKUP SEARCHES:
-- Search: "greyhound racing today Australia"
 - Search: "TAB greyhound racing today live"  
 - Search: "live greyhound racing today Australia"
 - Search: "Australian greyhound meetings today"
@@ -621,12 +623,13 @@ MUST COMPLETE: Find current betting markets:
 - Search: "sportsbet greyhound odds {day_name}"
 
 **CRITICAL REQUIREMENTS:**
-- Today is {day_name}, {date_formatted} ({date_today})
+- Today is {day_name}, {date_formatted} ({date_today}) - THIS IS THE CURRENT DATE
 - Current time is {current_time_perth} AWST
 - ONLY analyze races that start AFTER this time
 - Use REAL dog names from actual race cards
 - NO fake, placeholder, or example data
-- Must find at least some real race meetings for {day_name}
+- Must find at least some real race meetings for TODAY
+- DO NOT treat this as a future date - {date_formatted} IS TODAY
 
 **SELECTION CRITERIA FOR TIPS:**
 - Win probability >35% OR place probability >65%
@@ -636,7 +639,7 @@ MUST COMPLETE: Find current betting markets:
 
 **OUTPUT FORMAT - ONLY if you find REAL race data:**
 
-🐕 **TOP GREYHOUND SELECTIONS FOR {day_name} {date_formatted}:**
+🐕 **TOP GREYHOUND SELECTIONS FOR TODAY {day_name} {date_formatted}:**
 
 For each REAL selection found:
 🐕 **[REAL DOG NAME]** | Race [X] | [REAL TRACK NAME]
@@ -647,13 +650,16 @@ For each REAL selection found:
 
 **IMPORTANT NOTES:**
 - {day_name} is a typical racing day in Australia - there should be multiple meetings
-- If initial searches don't find data, try alternative date formats
+- TODAY ({date_formatted}) is the CURRENT date, not a future date
+- If initial searches don't find data, try alternative search terms
 - Search for both evening and afternoon meetings
 - Cross-reference multiple sources to verify race information
 - Always use the specific date {date_today} in searches for accuracy
 
 **If you still cannot find real race data after comprehensive searching:**
 Provide a detailed report of what searches were attempted and what results were found, then give general advice about checking official racing websites.
+
+REMEMBER: {date_formatted} is TODAY'S date. This is NOT a future analysis request.
 
 BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMATION."""
 
