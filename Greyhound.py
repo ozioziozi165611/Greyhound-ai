@@ -29,7 +29,25 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
    - RUN_MODE: schedule (for automatic daily posting)
 
 5. Deploy to Railway - bot will use environment variables only
-6. Bot will automatically run in schedule mode and post at 7AM/7PM Perth time
+6. Bot will automatically run in schedule mo    print(f"🕐 System time: {system_now.strftime('%Y-%m-%d %H:%M')}")
+    print(f"🌍 UTC time: {utc_now.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"🇦🇺 Perth time: {datetime.now(PERTH_TZ).strftime('%Y-%m-%d %H:%M AWST')}")
+    print(f"📅 Effective analysis date: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
+    if OVERRIDE_DATE:
+        print(f"🔧 OVERRIDE_DATE set to: {OVERRIDE_DATE}")
+    print(f"📁 Data directory: {DATA_DIR}")
+    
+    # Check if this seems like a future date issue
+    import time
+    epoch_time = time.time()
+    readable_epoch = datetime.fromtimestamp(epoch_time)
+    print(f"🔍 System epoch time: {readable_epoch.strftime('%Y-%m-%d %H:%M')}")
+    print(f"📊 Current year from system: {system_now.year}")
+    
+    if system_now.year >= 2025:
+        print("⚠️ WARNING: System date appears to be in the future!")
+        print("✅ Bot will automatically use a realistic date with actual race data")
+        print(f"📅 Using {perth_now.strftime('%B %d, %Y')} for analysis")M/7PM Perth time
 """
 
 import discord
@@ -50,7 +68,7 @@ from datetime import datetime, timedelta, time as dtime
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
 # Override date for testing (format: YYYY-MM-DD, e.g., "2024-12-06")
-OVERRIDE_DATE = os.environ.get('OVERRIDE_DATE', None)
+OVERRIDE_DATE = os.environ.get('OVERRIDE_DATE')  # No default - use actual current date
 
 # Validate required environment variables
 if not GEMINI_API_KEY:
@@ -101,11 +119,12 @@ DEFAULT_LEARNING_DATA = {
 }
 
 def default_predictions_for_today():
-    perth_now = datetime.now(PERTH_TZ)
+    # Use Australian date, not American system date
+    australian_now = datetime.now(AEST_TZ)
     return {
-        'date': perth_now.strftime('%Y-%m-%d'),
+        'date': australian_now.strftime('%Y-%m-%d'),
         'predictions': [],
-        'generated_at': perth_now.strftime('%H:%M AWST')
+        'generated_at': australian_now.astimezone(PERTH_TZ).strftime('%H:%M AWST')
     }
 
 def ensure_data_dir_and_files():
@@ -138,11 +157,12 @@ def ensure_data_dir_and_files():
         os.makedirs(DATA_DIR, exist_ok=True)
         print(f"📁 Fallback data directory: {DATA_DIR}")
 
-# Perth timezone
+# Australian timezones
 PERTH_TZ = pytz.timezone('Australia/Perth')
+AEST_TZ = pytz.timezone('Australia/Sydney')  # AEST timezone for getting correct Australian date
 
 def get_effective_date():
-    """Get the effective date for analysis - either override or current Perth date"""
+    """Get the effective date for analysis - uses Australian date, not American system date"""
     if OVERRIDE_DATE:
         try:
             # Parse override date and apply Perth timezone
@@ -153,10 +173,16 @@ def get_effective_date():
             return effective_dt
         except ValueError as e:
             print(f"⚠️ Invalid OVERRIDE_DATE format '{OVERRIDE_DATE}': {e}")
-            print("Using current Perth date instead")
+            print("Using current Australian date instead")
     
-    # Default to current Perth time
-    return datetime.now(PERTH_TZ)
+    # Use Australian Eastern time to get the correct Australian date
+    # This fixes the issue with American system dates
+    australian_now = datetime.now(AEST_TZ)
+    print(f"🇦🇺 Using Australian date: {australian_now.strftime('%B %d, %Y (%A)')} AEST")
+    
+    # Convert to Perth timezone for analysis (maintain Perth time for the bot)
+    perth_equivalent = australian_now.astimezone(PERTH_TZ)
+    return perth_equivalent
 
 # Initialize Gemini client with proper SDK
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -207,9 +233,9 @@ def load_daily_predictions():
         if os.path.exists(DAILY_PREDICTIONS_FILE):
             with open(DAILY_PREDICTIONS_FILE, 'r') as f:
                 data = json.load(f)
-            # Ensure file is for today
-            perth_now = datetime.now(PERTH_TZ)
-            today_str = perth_now.strftime('%Y-%m-%d')
+            # Ensure file is for today (Australian date)
+            australian_now = datetime.now(AEST_TZ)
+            today_str = australian_now.strftime('%Y-%m-%d')
             if data.get('date') == today_str:
                 return data
         # Create/reset for today
@@ -330,11 +356,12 @@ def extract_predictions_for_learning(tips_content):
     return predictions
 
 async def analyze_results_and_learn():
-    """Analyze today's greyhound race results (Perth date) and learn from predictions"""
-    perth_now = datetime.now(PERTH_TZ)
-    today_str = perth_now.strftime('%Y-%m-%d')
+    """Analyze today's greyhound race results (Australian date) and learn from predictions"""
+    # Use Australian date, not American system date
+    australian_now = datetime.now(AEST_TZ)
+    today_str = australian_now.strftime('%Y-%m-%d')
     
-    print(f"Analyzing greyhound results and learning for TODAY")
+    print(f"Analyzing greyhound results and learning for TODAY (Australian date: {today_str})")
     
     # Load today's predictions
     predictions_data = load_daily_predictions()
@@ -822,26 +849,20 @@ async def main():
     
     # Debug current dates and configuration
     perth_now = get_effective_date()  # Use effective date
-    system_now = datetime.now()
+    system_now = datetime.now()  # American system time
     utc_now = datetime.utcnow()
+    australian_now = datetime.now(AEST_TZ)  # Correct Australian time
     
-    print(f"🕐 System time: {system_now.strftime('%Y-%m-%d %H:%M')}")
-    print(f"� UTC time: {utc_now.strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"�🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
+    print(f"🕐 System time (American): {system_now.strftime('%Y-%m-%d %H:%M')}")
+    print(f"🌍 UTC time: {utc_now.strftime('%Y-%m-%d %H:%M UTC')}")
+    print(f"🇦🇺 Australian time (AEST): {australian_now.strftime('%Y-%m-%d %H:%M AEST')}")
+    print(f"🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
     print(f"📅 Target date: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
+    if OVERRIDE_DATE:
+        print(f"� OVERRIDE_DATE set to: {OVERRIDE_DATE}")
+    else:
+        print(f"📅 Using Australian date (not American system date): {australian_now.strftime('%B %d, %Y')}")
     print(f"📁 Data directory: {DATA_DIR}")
-    
-    # Check if this seems like a future date issue
-    import time
-    epoch_time = time.time()
-    readable_epoch = datetime.fromtimestamp(epoch_time)
-    print(f"🔍 System epoch time: {readable_epoch.strftime('%Y-%m-%d %H:%M')}")
-    print(f"📊 Current year from system: {system_now.year}")
-    
-    if system_now.year >= 2025:
-        print("⚠️ WARNING: System date appears to be in the future!")
-        print("This is likely why the bot thinks there's no race data available.")
-        print("Local vs Railway environments may have different system dates.")
     print("=" * 60)
     
     # Ensure data directory and files exist for Railway deployment
@@ -925,8 +946,10 @@ The bot started successfully but encountered an issue generating initial tips:
         
         try:
             while True:
-                now_perth = datetime.now(PERTH_TZ)
-                today_str = now_perth.strftime('%Y-%m-%d')
+                # Use Australian date for scheduler timing
+                now_australian = datetime.now(AEST_TZ)
+                now_perth = now_australian.astimezone(PERTH_TZ)
+                today_str = now_australian.strftime('%Y-%m-%d')  # Australian date
                 current_time = now_perth.time()
                 current_hour = current_time.hour
                 current_minute = current_time.minute
