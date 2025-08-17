@@ -55,7 +55,6 @@ from discord import Webhook
 from discord.ui import View, Button
 from discord import ButtonStyle
 from google import genai
-from google.genai import types # type: ignore
 import asyncio
 import aiohttp
 import json
@@ -167,21 +166,13 @@ def get_effective_date():
 # Initialize Gemini client with proper SDK
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Define grounding tool for REAL web search
-grounding_tool = types.Tool(google_search=types.GoogleSearch())
-
-# Configure generation with deep thinking AND real web search with extended budget
-generation_config = types.GenerateContentConfig(
-    tools=[grounding_tool],  # Enable real-time web search
-    thinking_config=types.ThinkingConfig(
-        thinking_budget=30000,  # Set to 30k tokens for extended analysis (max allowed: 32768)
-        include_thoughts=True  # Include reasoning process
-    ),
-    temperature=0.2,
-    top_p=0.8,
-    top_k=30,
-    max_output_tokens=32768  # Doubled output tokens for comprehensive analysis
-)
+# Configure generation with simple config (no thinking or tools for now)
+generation_config = {
+    "temperature": 0.2,
+    "top_p": 0.8,
+    "top_k": 30,
+    "max_output_tokens": 8192  # be sane; 32k often unnecessary/slow
+}
 
 def load_daily_predictions():
     """Load today's predictions"""
@@ -272,7 +263,7 @@ def extract_predictions_for_learning(tips_content):
     
     return predictions
 
-async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - Data Issue", add_buttons=False, tips_content=None):
+async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - Data Issue"):
     """Send message to fallback webhook for data issues"""
     try:
         async with aiohttp.ClientSession() as session:
@@ -281,91 +272,49 @@ async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - D
             embed = discord.Embed(
                 title=title,
                 description=content[:4096] if len(content) > 4096 else content,
-                color=0xff0000 if not add_buttons else 0xffaa00  # Orange for review, red for errors
+                color=0xff0000  # Red for errors
             )
             embed.set_footer(text=f"Generated on {datetime.now(PERTH_TZ).strftime('%B %d, %Y at %H:%M AWST')}")
             
-            # Add buttons for review if requested
-            if add_buttons and tips_content:
-                # Create view with buttons
-                class ReviewView(View):
-                    def __init__(self):
-                        super().__init__(timeout=3600)  # 1 hour timeout
-                    
-                    @discord.ui.button(label="✅ Send to Main Discord", style=ButtonStyle.green)
-                    async def approve_button(self, interaction: discord.Interaction, button: Button):
-                        try:
-                            # Send to main webhook
-                            await send_webhook_message(tips_content, title="🐕 Approved Greyhound Tips - Manual Review")
-                            await interaction.response.send_message("✅ Tips sent to main Discord!", ephemeral=True)
-                        except Exception as e:
-                            await interaction.response.send_message(f"❌ Error sending to main Discord: {str(e)}", ephemeral=True)
-                    
-                    @discord.ui.button(label="🔄 Generate New Tips", style=ButtonStyle.blurple)
-                    async def retry_button(self, interaction: discord.Interaction, button: Button):
-                        await interaction.response.send_message("🔄 Triggering new analysis... (this may take a few minutes)", ephemeral=True)
-                        try:
-                            # Trigger new analysis
-                            new_tips = await analyze_greyhound_racing_day_with_retry(datetime.now(PERTH_TZ).strftime("%H:%M AWST"))
-                            
-                            # Send preview to fallback webhook
-                            preview_embed = discord.Embed(
-                                title="🔄 New Tips Generated",
-                                description=new_tips[:4096] if len(new_tips) > 4096 else new_tips,
-                                color=0x00ff00
-                            )
-                            await interaction.followup.send(embed=preview_embed)
-                            
-                        except Exception as e:
-                            await interaction.followup.send(f"❌ Error generating new tips: {str(e)}")
-                    
-                    @discord.ui.button(label="❌ Reject", style=ButtonStyle.red)
-                    async def reject_button(self, interaction: discord.Interaction, button: Button):
-                        await interaction.response.send_message("❌ Tips rejected. No action taken.", ephemeral=True)
-                
-                view = ReviewView()
-                await webhook.send(embed=embed, view=view)
-            else:
-                await webhook.send(embed=embed)
+            await webhook.send(embed=embed)
                 
     except Exception as e:
         print(f"Error sending fallback webhook: {str(e)}")
 
 def detect_false_data(tips_content):
-    """Detect if the response contains false/placeholder data or generic responses"""
-    false_data_indicators = [
-        "Example Dog Name",
-        "SAMPLE GREYHOUND", 
-        "Demo Track",
-        "Sample Race",
-        "XX:XX AWST",
-        "X.XX",
-        "XXX%",
-        "Box X",
-        "Track Name",
-        "Placeholder",
-        "Test Dog",
-        "comprehensive review of all scheduled meetings",
-        "lack of available real-time",
-        "hampered by the lack of",
-        "cannot issue official",
-        "without the final fields",
-        "preliminary watchlist",
-        "cannot provide specific selections",
-        "Today's Greyhound Racing Meetings Across Australia:",
-        "As an expert greyhound racing analyst, I have conducted"
+    """
+    Relaxed false data detection to avoid false positives.
+    Only flag obvious placeholder/error content.
+    """
+    content_lower = tips_content.lower()
+    
+    # Only flag very obvious placeholders
+    placeholder_indicators = [
+        "example dog name",
+        "sample greyhound", 
+        "demo track",
+        "sample race",
+        "xx:xx awst",
+        "x.xx",
+        "xxx%",
+        "box x",
+        "track name",
+        "placeholder",
+        "test dog",
+        "no data available",
+        "data not found", 
+        "coming soon",
+        "under construction"
     ]
     
-    # Check for false data indicators
-    for indicator in false_data_indicators:
-        if indicator in tips_content:
-            return True
+    # Check for obvious errors
+    if any(indicator in content_lower for indicator in placeholder_indicators):
+        print(f"[FALSE DATA] Placeholder detected: {tips_content[:100]}...")
+        return True
     
-    # Check if response is too generic (no specific greyhound names or detailed analysis)
-    has_specific_greyhound = bool(re.search(r'🐕 \*\*[A-Z][a-z]+ [A-Z][a-z]+\*\*', tips_content))
-    has_analysis_scores = "Analysis Score:" in tips_content or "Composite Score:" in tips_content
-    
-    if not has_specific_greyhound or not has_analysis_scores:
+    # Content too short (less than 100 chars is suspicious)
+    if len(tips_content.strip()) < 100:
+        print(f"[FALSE DATA] Content too short ({len(tips_content)} chars): {tips_content[:50]}...")
         return True
     
     return False
@@ -411,9 +360,7 @@ async def analyze_greyhound_racing_day_with_retry(current_time_perth):
                 
                 await send_fallback_webhook_message(
                     review_message, 
-                    title="🔍 Greyhound Tips - Manual Review Required",
-                    add_buttons=True,
-                    tips_content=tips_result
+                    title="🔍 Greyhound Tips - Manual Review Required"
                 )
                 
                 # If this is the final attempt, return a message but don't send to main webhook
@@ -462,13 +409,9 @@ async def placeholder_function_to_remove():
     """This function will be removed"""
     pass
     
-    print(f"Analyzing greyhound results and learning for TODAY (Australian date: {today_str})")
-    
-    # Load today's predictions
-    predictions_data = load_daily_predictions()
-    if not predictions_data.get('predictions'):
-        print("No predictions found for today")
-        return "No predictions to analyze for today."
+    # Learning system disabled 
+    print("Learning system has been disabled as requested")
+    return "Learning system disabled."
     
     # Get race results for analysis using dynamic language
     results_prompt = f"""🔍 GREYHOUND RACE RESULTS ANALYSIS - TODAY'S RESULTS
@@ -534,8 +477,10 @@ Provide results in this concise format:
         return error_msg
 
 async def analyze_prediction_accuracy(predictions_data, results_content):
-    """Analyze how accurate our predictions were and update learning data"""
-    learning_data = load_learning_data()
+    """Analyze how accurate our predictions were (learning system disabled)"""
+    # Learning system removed - just log the call
+    print("📊 Prediction accuracy analysis called (learning system disabled)")
+    return "Learning system has been disabled as requested."
     
     correct_predictions = 0
     total_predictions = len(predictions_data['predictions'])
@@ -575,17 +520,6 @@ async def analyze_prediction_accuracy(predictions_data, results_content):
         learning_data['learning_insights'].append(
             f"{predictions_data['date']}: {correct_predictions}/{total_predictions} correct ({(correct_predictions/total_predictions)*100:.1f}%)"
         )
-    
-    # Trim lists
-    learning_data['successful_patterns'] = learning_data['successful_patterns'][-50:]
-    learning_data['failed_patterns'] = learning_data['failed_patterns'][-50:]
-    learning_data['learning_insights'] = learning_data['learning_insights'][-20:]
-    
-    save_learning_data(learning_data)
-    
-    pct = (correct_predictions/total_predictions)*100 if total_predictions else 0
-    return f"📈 Accuracy: {correct_predictions}/{total_predictions} ({pct:.1f}%) | Overall win rate: {learning_data['win_rate']:.1f}%\n" + "\n".join(analysis_summary)
-
 def has_strong_bets(tips_content):
     # Look for strong bet indicators in the response
     strong_bet_indicators = [
@@ -1059,8 +993,8 @@ The bot started successfully but encountered an issue generating initial tips:
                 current_hour = current_time.hour
                 current_minute = current_time.minute
                 
-                # Check if it's 7:00 AM (07:00-07:05 window for reliability)
-                if (current_hour == 7 and current_minute < 5 and 
+                # Check if it's morning window (6-8 AM for better reliability)
+                if (6 <= current_hour <= 8 and current_minute < 30 and 
                     scheduler_status.get('last_morning_run') != today_str):
                     
                     print(f"🌅 Triggering 7AM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
