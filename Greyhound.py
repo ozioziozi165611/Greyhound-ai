@@ -52,6 +52,8 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
 
 import discord
 from discord import Webhook
+from discord.ui import View, Button
+from discord import ButtonStyle
 from google import genai
 from google.genai import types # type: ignore
 import asyncio
@@ -270,7 +272,7 @@ def extract_predictions_for_learning(tips_content):
     
     return predictions
 
-async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - Data Issue"):
+async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - Data Issue", add_buttons=False, tips_content=None):
     """Send message to fallback webhook for data issues"""
     try:
         async with aiohttp.ClientSession() as session:
@@ -279,11 +281,52 @@ async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - D
             embed = discord.Embed(
                 title=title,
                 description=content[:4096] if len(content) > 4096 else content,
-                color=0xff0000  # Red color for issues
+                color=0xff0000 if not add_buttons else 0xffaa00  # Orange for review, red for errors
             )
             embed.set_footer(text=f"Generated on {datetime.now(PERTH_TZ).strftime('%B %d, %Y at %H:%M AWST')}")
             
-            await webhook.send(embed=embed)
+            # Add buttons for review if requested
+            if add_buttons and tips_content:
+                # Create view with buttons
+                class ReviewView(View):
+                    def __init__(self):
+                        super().__init__(timeout=3600)  # 1 hour timeout
+                    
+                    @discord.ui.button(label="✅ Send to Main Discord", style=ButtonStyle.green)
+                    async def approve_button(self, interaction: discord.Interaction, button: Button):
+                        try:
+                            # Send to main webhook
+                            await send_webhook_message(tips_content, title="🐕 Approved Greyhound Tips - Manual Review")
+                            await interaction.response.send_message("✅ Tips sent to main Discord!", ephemeral=True)
+                        except Exception as e:
+                            await interaction.response.send_message(f"❌ Error sending to main Discord: {str(e)}", ephemeral=True)
+                    
+                    @discord.ui.button(label="🔄 Generate New Tips", style=ButtonStyle.blurple)
+                    async def retry_button(self, interaction: discord.Interaction, button: Button):
+                        await interaction.response.send_message("🔄 Triggering new analysis... (this may take a few minutes)", ephemeral=True)
+                        try:
+                            # Trigger new analysis
+                            new_tips = await analyze_greyhound_racing_day_with_retry(datetime.now(PERTH_TZ).strftime("%H:%M AWST"))
+                            
+                            # Send preview to fallback webhook
+                            preview_embed = discord.Embed(
+                                title="🔄 New Tips Generated",
+                                description=new_tips[:4096] if len(new_tips) > 4096 else new_tips,
+                                color=0x00ff00
+                            )
+                            await interaction.followup.send(embed=preview_embed)
+                            
+                        except Exception as e:
+                            await interaction.followup.send(f"❌ Error generating new tips: {str(e)}")
+                    
+                    @discord.ui.button(label="❌ Reject", style=ButtonStyle.red)
+                    async def reject_button(self, interaction: discord.Interaction, button: Button):
+                        await interaction.response.send_message("❌ Tips rejected. No action taken.", ephemeral=True)
+                
+                view = ReviewView()
+                await webhook.send(embed=embed, view=view)
+            else:
+                await webhook.send(embed=embed)
                 
     except Exception as e:
         print(f"Error sending fallback webhook: {str(e)}")
@@ -343,40 +386,46 @@ async def analyze_greyhound_racing_day_with_retry(current_time_perth):
             if detect_false_data(tips_result):
                 print(f"❌ Attempt {attempt + 1}: False/placeholder data detected")
                 
-                if attempt == max_retries - 1:
-                    # Final attempt failed - send to fallback webhook
-                    fallback_message = f"""🚨 **GREYHOUND BOT - DATA QUALITY ISSUE**
+                # Send to fallback webhook for manual review instead of just failing
+                review_message = f"""� **GREYHOUND TIPS - MANUAL REVIEW REQUIRED**
 
-After {max_retries} attempts, the bot could not generate accurate greyhound racing tips.
+**Attempt {attempt + 1}/{max_retries}:** The AI generated tips but they may contain placeholder data or be too generic.
 
-**Issue:** Gemini is returning generic responses or placeholder data instead of real race information.
-
-**Last Response Preview:**
+**Generated Content Preview:**
 ```
-{tips_result[:500]}...
+{tips_result[:1000]}...
 ```
 
-**Recommended Actions:**
-1. Check if there are actual greyhound races scheduled for today
-2. Verify API limits haven't been exceeded
-3. Try manual analysis at official racing websites
+**Detected Issues:**
+- May contain placeholder/template data
+- Could be generic responses instead of specific race data
+- Missing detailed analysis scores or specific dog names
+
+**Your Options:**
+✅ **Send Anyway** - If you think the tips are actually okay
+🔄 **Generate New** - Trigger a fresh analysis attempt  
+❌ **Reject** - Don't post anything
 
 **Time:** {current_time_perth} AWST
 **Date:** {datetime.now(PERTH_TZ).strftime('%B %d, %Y')}"""
-                    
-                    await send_fallback_webhook_message(fallback_message, 
-                                                       "🚨 Greyhound Bot - Unable to Generate Accurate Tips")
-                    
-                    return f"""⚠️ **DATA QUALITY ISSUE**
+                
+                await send_fallback_webhook_message(
+                    review_message, 
+                    title="🔍 Greyhound Tips - Manual Review Required",
+                    add_buttons=True,
+                    tips_content=tips_result
+                )
+                
+                # If this is the final attempt, return a message but don't send to main webhook
+                if attempt == max_retries - 1:
+                    return f"""⚠️ **MANUAL REVIEW REQUIRED**
 
-Could not generate accurate greyhound racing tips after {max_retries} attempts.
+Tips have been sent to the review channel for manual approval.
 
-The AI system returned generic responses instead of specific race data. This usually happens when:
-- No races are scheduled for today
-- Race data isn't published yet
-- API rate limits have been reached
+The AI generated content that may contain placeholder data or be too generic. Please check the fallback Discord channel to review and approve/reject the tips.
 
-Please check official racing websites for today's meetings."""
+**Status:** Awaiting manual review
+**Time:** {current_time_perth} AWST"""
                 
                 else:
                     print(f"⏳ Waiting {retry_delay} seconds before retry...")
