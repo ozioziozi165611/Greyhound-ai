@@ -67,6 +67,7 @@ from datetime import datetime, timedelta, time as dtime
 # API Configuration - Railway environment variables only
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL')
+FALLBACK_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1403918683062927370/DuSmvhwvPqf7xF7JdRrfv0yg9Zh6HpqrRvJAUD_bRINX-0_RSbdi2NgwPUy1upJPK48h"
 # Override date for testing (format: YYYY-MM-DD, e.g., "2024-12-06")
 OVERRIDE_DATE = os.environ.get('OVERRIDE_DATE')  # No default - use actual current date
 
@@ -99,24 +100,8 @@ else:
     # Local development path
     DATA_DIR = r'c:\Users\Pixel\Desktop\HORSE AI LJ\data'
 
-# Learning system files (within DATA_DIR)
-LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
+# Simple storage for daily predictions (no learning system)
 DAILY_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'daily_greyhound_predictions.json')
-
-DEFAULT_LEARNING_DATA = {
-    'total_predictions': 0,
-    'successful_predictions': 0,
-    'failed_predictions': 0,
-    'win_rate': 0.0,
-    'successful_patterns': [],
-    'failed_patterns': [],
-    'trainer_performance': {},
-    'track_performance': {},
-    'distance_performance': {},
-    'box_performance': {},
-    'grade_performance': {},
-    'learning_insights': []
-}
 
 def default_predictions_for_today():
     # Use Australian date, not American system date
@@ -129,18 +114,12 @@ def default_predictions_for_today():
 
 def ensure_data_dir_and_files():
     """Ensure data directory and JSON files exist (Railway-ready)."""
-    global DATA_DIR, LEARNING_DATA_FILE, DAILY_PREDICTIONS_FILE
+    global DATA_DIR, DAILY_PREDICTIONS_FILE
     
     try:
         # Create data directory with proper permissions
         os.makedirs(DATA_DIR, exist_ok=True)
         print(f"📁 Data directory: {DATA_DIR}")
-        
-        # Learning data file
-        if not os.path.exists(LEARNING_DATA_FILE):
-            with open(LEARNING_DATA_FILE, 'w') as f:
-                json.dump(DEFAULT_LEARNING_DATA, f, indent=2)
-            print("📊 Created learning data file")
         
         # Daily predictions file
         if not os.path.exists(DAILY_PREDICTIONS_FILE):
@@ -152,7 +131,6 @@ def ensure_data_dir_and_files():
         print(f"❌ Error ensuring data files: {e}")
         # Try to create in current directory as fallback
         DATA_DIR = './data'
-        LEARNING_DATA_FILE = os.path.join(DATA_DIR, 'greyhound_learning_data.json')
         DAILY_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'daily_greyhound_predictions.json')
         os.makedirs(DATA_DIR, exist_ok=True)
         print(f"📁 Fallback data directory: {DATA_DIR}")
@@ -203,29 +181,6 @@ generation_config = types.GenerateContentConfig(
     max_output_tokens=32768  # Doubled output tokens for comprehensive analysis
 )
 
-def load_learning_data():
-    """Load learning data from file"""
-    try:
-        if os.path.exists(LEARNING_DATA_FILE):
-            with open(LEARNING_DATA_FILE, 'r') as f:
-                return json.load(f)
-        # Create default if missing
-        os.makedirs(DATA_DIR, exist_ok=True)
-        with open(LEARNING_DATA_FILE, 'w') as f:
-            json.dump(DEFAULT_LEARNING_DATA, f, indent=2)
-        return DEFAULT_LEARNING_DATA.copy()
-    except Exception as e:
-        print(f"Error loading learning data: {e}")
-        return DEFAULT_LEARNING_DATA.copy()
-
-def save_learning_data(data):
-    """Save learning data to file"""
-    try:
-        with open(LEARNING_DATA_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        print(f"Error saving learning data: {e}")
-
 def load_daily_predictions():
     """Load today's predictions"""
     try:
@@ -255,29 +210,6 @@ def save_daily_predictions(predictions_data):
     except Exception as e:
         print(f"Error saving predictions: {e}")
 
-def get_learning_enhanced_prompt():
-    """Generate enhanced prompt based on learning data"""
-    learning_data = load_learning_data()
-    
-    base_insights = ""
-    if learning_data['total_predictions'] > 0:
-        win_rate = learning_data['win_rate']
-        base_insights = f"""
-🧠 LEARNING SYSTEM INSIGHTS (Win Rate: {win_rate:.1f}%):
-
-SUCCESSFUL PATTERNS IDENTIFIED:
-{chr(10).join(learning_data['successful_patterns'][-10:])}
-
-FAILED PATTERNS TO AVOID:
-{chr(10).join(learning_data['failed_patterns'][-10:])}
-
-TOP PERFORMING INSIGHTS:
-{chr(10).join(learning_data['learning_insights'][-5:])}
-
-ADJUST YOUR ANALYSIS BASED ON THESE PROVEN PATTERNS."""
-    
-    return base_insights
-
 async def generate_greyhound_tips():
     """Generate greyhound tips for today's races only (Perth timezone)"""
     perth_now = get_effective_date()  # Use effective date instead of current time
@@ -289,16 +221,13 @@ async def generate_greyhound_tips():
     print(f"Generating fresh greyhound tips for TODAY at {current_time_perth}")
     print(f"DEBUG: Perth date: {target_date_search}, Perth time: {current_time_perth}")
     
-    # Get learning insights
-    learning_insights = get_learning_enhanced_prompt()
+    # Analyze today's greyhound races with retry logic
+    tips_result = await analyze_greyhound_racing_day_with_retry(current_time_perth)
     
-    # Analyze today's greyhound races only - using dynamic language
-    tips_result = await analyze_greyhound_racing_day(current_time_perth, learning_insights)
-    
-    # Save predictions for evening analysis
+    # Save predictions for basic logging
     predictions_data = {
         'date': target_date_search,
-        'predictions': extract_predictions_for_learning(tips_result),
+        'predictions': [],  # Simplified - no learning system
         'generated_at': current_time_perth
     }
     save_daily_predictions(predictions_data)
@@ -312,11 +241,8 @@ async def research_analysis_only():
     
     print(f"Generating research analysis for TODAY at {current_time_perth}")
     
-    # Get learning insights
-    learning_insights = get_learning_enhanced_prompt()
-    
-    # Analyze today's greyhound races only - research mode
-    research_result = await analyze_greyhound_racing_day(current_time_perth, learning_insights)
+    # Analyze today's greyhound races with retry logic
+    research_result = await analyze_greyhound_racing_day_with_retry(current_time_perth)
     
     # Print to console instead of sending to Discord
     print("\n" + "="*80)
@@ -328,38 +254,164 @@ async def research_analysis_only():
     return research_result
 
 def extract_predictions_for_learning(tips_content):
-    """Extract predictions from greyhound tips content for later learning analysis"""
+    """Extract predictions from greyhound tips content - simplified version"""
     predictions = []
     lines = tips_content.split('\n')
     
-    current_greyhound = {}
     for line in lines:
         if line.startswith('🐕 **') and '**' in line:
-            if current_greyhound:
-                predictions.append(current_greyhound)
             # Extract greyhound name
             greyhound_match = re.search(r'🐕 \*\*(.*?)\*\*', line)
             if greyhound_match:
-                current_greyhound = {
+                predictions.append({
                     'greyhound_name': greyhound_match.group(1),
-                    'race_info': line,
-                    'prediction_details': []
-                }
-        elif current_greyhound and any(keyword in line for keyword in ['Composite Score:', 'Race Time:', 'Track:', 'Box:', 'Distance:']):
-            current_greyhound['prediction_details'].append(line)
-        elif current_greyhound and line.startswith('💡 **Analysis:**'):
-            current_greyhound['analysis'] = line
-    
-    if current_greyhound:
-        predictions.append(current_greyhound)
+                    'race_info': line
+                })
     
     return predictions
 
-async def analyze_results_and_learn():
-    """Analyze today's greyhound race results (Australian date) and learn from predictions"""
-    # Use Australian date, not American system date
-    australian_now = datetime.now(AEST_TZ)
-    today_str = australian_now.strftime('%Y-%m-%d')
+async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - Data Issue"):
+    """Send message to fallback webhook for data issues"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            webhook = Webhook.from_url(FALLBACK_WEBHOOK_URL, session=session)
+            
+            embed = discord.Embed(
+                title=title,
+                description=content[:4096] if len(content) > 4096 else content,
+                color=0xff0000  # Red color for issues
+            )
+            embed.set_footer(text=f"Generated on {datetime.now(PERTH_TZ).strftime('%B %d, %Y at %H:%M AWST')}")
+            
+            await webhook.send(embed=embed)
+                
+    except Exception as e:
+        print(f"Error sending fallback webhook: {str(e)}")
+
+def detect_false_data(tips_content):
+    """Detect if the response contains false/placeholder data or generic responses"""
+    false_data_indicators = [
+        "Example Dog Name",
+        "SAMPLE GREYHOUND", 
+        "Demo Track",
+        "Sample Race",
+        "XX:XX AWST",
+        "X.XX",
+        "XXX%",
+        "Box X",
+        "Track Name",
+        "Placeholder",
+        "Test Dog",
+        "comprehensive review of all scheduled meetings",
+        "lack of available real-time",
+        "hampered by the lack of",
+        "cannot issue official",
+        "without the final fields",
+        "preliminary watchlist",
+        "cannot provide specific selections",
+        "Today's Greyhound Racing Meetings Across Australia:",
+        "As an expert greyhound racing analyst, I have conducted"
+    ]
+    
+    # Check for false data indicators
+    for indicator in false_data_indicators:
+        if indicator in tips_content:
+            return True
+    
+    # Check if response is too generic (no specific greyhound names or detailed analysis)
+    has_specific_greyhound = bool(re.search(r'🐕 \*\*[A-Z][a-z]+ [A-Z][a-z]+\*\*', tips_content))
+    has_analysis_scores = "Analysis Score:" in tips_content or "Composite Score:" in tips_content
+    
+    if not has_specific_greyhound or not has_analysis_scores:
+        return True
+    
+    return False
+
+async def analyze_greyhound_racing_day_with_retry(current_time_perth):
+    """Analyze greyhound racing with retry logic for better data quality"""
+    max_retries = 3
+    retry_delay = 120  # 2 minutes between retries
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"🔍 Analysis attempt {attempt + 1}/{max_retries}")
+            
+            # Call the main analysis function
+            tips_result = await analyze_greyhound_racing_day(current_time_perth)
+            
+            # Check if the result contains false data
+            if detect_false_data(tips_result):
+                print(f"❌ Attempt {attempt + 1}: False/placeholder data detected")
+                
+                if attempt == max_retries - 1:
+                    # Final attempt failed - send to fallback webhook
+                    fallback_message = f"""🚨 **GREYHOUND BOT - DATA QUALITY ISSUE**
+
+After {max_retries} attempts, the bot could not generate accurate greyhound racing tips.
+
+**Issue:** Gemini is returning generic responses or placeholder data instead of real race information.
+
+**Last Response Preview:**
+```
+{tips_result[:500]}...
+```
+
+**Recommended Actions:**
+1. Check if there are actual greyhound races scheduled for today
+2. Verify API limits haven't been exceeded
+3. Try manual analysis at official racing websites
+
+**Time:** {current_time_perth} AWST
+**Date:** {datetime.now(PERTH_TZ).strftime('%B %d, %Y')}"""
+                    
+                    await send_fallback_webhook_message(fallback_message, 
+                                                       "🚨 Greyhound Bot - Unable to Generate Accurate Tips")
+                    
+                    return f"""⚠️ **DATA QUALITY ISSUE**
+
+Could not generate accurate greyhound racing tips after {max_retries} attempts.
+
+The AI system returned generic responses instead of specific race data. This usually happens when:
+- No races are scheduled for today
+- Race data isn't published yet
+- API rate limits have been reached
+
+Please check official racing websites for today's meetings."""
+                
+                else:
+                    print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                    await asyncio.sleep(retry_delay)
+                    continue
+            
+            else:
+                print(f"✅ Attempt {attempt + 1}: Valid data received")
+                return tips_result
+                
+        except Exception as e:
+            print(f"❌ Attempt {attempt + 1} failed with error: {str(e)}")
+            
+            if attempt == max_retries - 1:
+                # Final attempt failed with error
+                error_message = f"""🚨 **GREYHOUND BOT - TECHNICAL ERROR**
+
+After {max_retries} attempts, the bot encountered technical errors.
+
+**Error:** {str(e)}
+
+**Time:** {current_time_perth} AWST
+**Date:** {datetime.now(PERTH_TZ).strftime('%B %d, %Y')}"""
+                
+                await send_fallback_webhook_message(error_message, 
+                                                   "🚨 Greyhound Bot - Technical Error")
+                
+                return f"⚠️ Technical error after {max_retries} attempts: {str(e)}"
+            else:
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                await asyncio.sleep(retry_delay)
+
+async def placeholder_function_to_remove():
+    """This function will be removed"""
+    pass
     
     print(f"Analyzing greyhound results and learning for TODAY (Australian date: {today_str})")
     
@@ -539,7 +591,7 @@ def extract_summary(tips_content):
     else:
         return "❌ No qualifying greyhound selections found for this day."
 
-async def analyze_greyhound_racing_day(current_time_perth, learning_insights):
+async def analyze_greyhound_racing_day(current_time_perth):
     """Analyze TODAY only (Perth date) with comprehensive greyhound analysis using dynamic language"""
     
     print(f"🔍 Starting comprehensive greyhound analysis for TODAY...")
@@ -565,8 +617,6 @@ async def analyze_greyhound_racing_day(current_time_perth, learning_insights):
 IMPORTANT: {date_formatted} is TODAY'S date. This is NOT a future date - this is the actual current date. Race data should be available for today's meetings.
 
 Target Analysis: ALL greyhound races for TODAY {day_name} {date_formatted} that haven't started yet
-
-{learning_insights}
 
 CRITICAL: Use REAL-TIME web search to find TODAY'S actual greyhound race meetings and runners. Do NOT generate fake or placeholder data. {date_formatted} is the CURRENT date, not a future date.
 
@@ -977,21 +1027,10 @@ The bot started successfully but encountered an issue generating initial tips:
                     except Exception as e:
                         print(f"❌ Error in 7AM run: {str(e)}")
                 
-                # Check if it's 7:00 PM (19:00-19:05 window for reliability)
-                elif (current_hour == 19 and current_minute < 5 and 
-                      scheduler_status.get('last_evening_run') != today_str):
-                    
-                    print(f"🌇 Triggering 7PM greyhound results analysis at {now_perth.strftime('%H:%M AWST')}...")
-                    try:
-                        await analyze_results_and_learn()
-                        
-                        # Update status
-                        scheduler_status['last_evening_run'] = today_str
-                        save_scheduler_status(scheduler_status)
-                        print(f"✅ 7PM analysis completed successfully for {today_str}")
-                        
-                    except Exception as e:
-                        print(f"❌ Error in 7PM run: {str(e)}")
+                # 7PM evening analysis has been disabled
+                # elif (current_hour == 19 and current_minute < 5 and 
+                #       scheduler_status.get('last_evening_run') != today_str):
+                #     print("🌇 7PM analysis has been disabled")
                 
                 # Debug output every 30 minutes
                 if current_minute in [0, 30]:
