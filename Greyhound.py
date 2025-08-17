@@ -280,46 +280,8 @@ async def send_fallback_webhook_message(content, title="⚠️ Greyhound Bot - D
     except Exception as e:
         print(f"Error sending fallback webhook: {str(e)}")
 
-def detect_false_data(tips_content):
-    """
-    Relaxed false data detection to avoid false positives.
-    Only flag obvious placeholder/error content.
-    """
-    content_lower = tips_content.lower()
-    
-    # Only flag very obvious placeholders
-    placeholder_indicators = [
-        "example dog name",
-        "sample greyhound", 
-        "demo track",
-        "sample race",
-        "xx:xx awst",
-        "x.xx",
-        "xxx%",
-        "box x",
-        "track name",
-        "placeholder",
-        "test dog",
-        "no data available",
-        "data not found", 
-        "coming soon",
-        "under construction"
-    ]
-    
-    # Check for obvious errors
-    if any(indicator in content_lower for indicator in placeholder_indicators):
-        print(f"[FALSE DATA] Placeholder detected: {tips_content[:100]}...")
-        return True
-    
-    # Content too short (less than 100 chars is suspicious)
-    if len(tips_content.strip()) < 100:
-        print(f"[FALSE DATA] Content too short ({len(tips_content)} chars): {tips_content[:50]}...")
-        return True
-    
-    return False
-
 async def analyze_greyhound_racing_day_with_retry(current_time_perth):
-    """Analyze greyhound racing with retry logic for better data quality"""
+    """Analyze greyhound racing with retry logic for better reliability"""
     max_retries = 3
     retry_delay = 120  # 2 minutes between retries
     
@@ -330,57 +292,9 @@ async def analyze_greyhound_racing_day_with_retry(current_time_perth):
             # Call the main analysis function
             tips_result = await analyze_greyhound_racing_day(current_time_perth)
             
-            # Check if the result contains false data
-            if detect_false_data(tips_result):
-                print(f"❌ Attempt {attempt + 1}: False/placeholder data detected")
-                
-                # Send to fallback webhook for manual review instead of just failing
-                review_message = f"""� **GREYHOUND TIPS - MANUAL REVIEW REQUIRED**
-
-**Attempt {attempt + 1}/{max_retries}:** The AI generated tips but they may contain placeholder data or be too generic.
-
-**Generated Content Preview:**
-```
-{tips_result[:1000]}...
-```
-
-**Detected Issues:**
-- May contain placeholder/template data
-- Could be generic responses instead of specific race data
-- Missing detailed analysis scores or specific dog names
-
-**Your Options:**
-✅ **Send Anyway** - If you think the tips are actually okay
-🔄 **Generate New** - Trigger a fresh analysis attempt  
-❌ **Reject** - Don't post anything
-
-**Time:** {current_time_perth} AWST
-**Date:** {datetime.now(PERTH_TZ).strftime('%B %d, %Y')}"""
-                
-                await send_fallback_webhook_message(
-                    review_message, 
-                    title="🔍 Greyhound Tips - Manual Review Required"
-                )
-                
-                # If this is the final attempt, return a message but don't send to main webhook
-                if attempt == max_retries - 1:
-                    return f"""⚠️ **MANUAL REVIEW REQUIRED**
-
-Tips have been sent to the review channel for manual approval.
-
-The AI generated content that may contain placeholder data or be too generic. Please check the fallback Discord channel to review and approve/reject the tips.
-
-**Status:** Awaiting manual review
-**Time:** {current_time_perth} AWST"""
-                
-                else:
-                    print(f"⏳ Waiting {retry_delay} seconds before retry...")
-                    await asyncio.sleep(retry_delay)
-                    continue
-            
-            else:
-                print(f"✅ Attempt {attempt + 1}: Valid data received")
-                return tips_result
+            # Just return the result - no false data checking
+            print(f"✅ Attempt {attempt + 1}: Analysis completed")
+            return tips_result
                 
         except Exception as e:
             print(f"❌ Attempt {attempt + 1} failed with error: {str(e)}")
@@ -733,53 +647,6 @@ BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMAT
 ⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly."""
         
         full_response = final_answer + disclaimer
-        
-        
-        # Check for fake data indicators
-        fake_data_indicators = [
-            "Example Dog Name",
-            "SAMPLE GREYHOUND", 
-            "Demo Track",
-            "Sample Race",
-            "XX:XX AWST",
-            "X.XX",
-            "XXX%",
-            "Box X",
-            "Track Name",
-            "Placeholder",
-            "Test Dog"
-        ]
-        
-        contains_fake_data = any(indicator in full_response for indicator in fake_data_indicators)
-        
-        if contains_fake_data:
-            print("⚠️ DEBUG: Detected fake/template data in response")
-            return f"""🐕 Greyhound Racing Analysis - {au_long}
-
-❌ **SEARCH ISSUE DETECTED**
-
-The analysis system found race-related content but it appears to contain placeholder or template data rather than real race information.
-
-📅 **TODAY'S DATE**: {au_long} ({au_iso})
-⏰ **CURRENT TIME**: {perth_time}
-
-🔍 **LIKELY CAUSES:**
-- Race data may not be fully published yet for {au_long}
-- Search results contained template/example data
-- Real race cards may be published closer to race times
-
-💡 **RECOMMENDED ACTIONS:**
-1. **Check TAB.com.au** directly for {au_long} greyhound meetings
-2. **Visit TheDogs.com.au** for comprehensive race cards
-3. **Try Sportsbet.com.au** for current greyhound markets
-4. **Check again in 2-3 hours** if it's still early in the day
-
-🏁 **TYPICAL RACING:**
-- Evening meetings usually start 7:00-8:00 PM local time
-- Major venues like Gosford, Murray Bridge, Bulli typically race
-- Race cards usually published by midday
-
-⚠️ **DISCLAIMER**: Please verify all information with official racing websites before placing any bets."""
         
         # Check if the response indicates no data found
         no_data_indicators = [
