@@ -8,7 +8,7 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
    
    requirements.txt:
    discord.py==2.3.2
-   google-generativeai==0.8.3
+   google-genai==0.6.0
    aiohttp==3.9.1
    pytz==2023.3
    
@@ -43,11 +43,10 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
     readable_epoch = datetime.fromtimestamp(epoch_time)
     print(f"🔍 System epoch time: {readable_epoch.strftime('%Y-%m-%d %H:%M')}")
     print(f"📊 Current year from system: {system_now.year}")
-    
-    if system_now.year >= 2025:
-        print("⚠️ WARNING: System date appears to be in the future!")
-        print("✅ Bot will automatically use a realistic date with actual race data")
-        print(f"📅 Using {perth_now.strftime('%B %d, %Y')} for analysis")M/7PM Perth time
+    print(f"📅 Bot will use Australian date for all analysis")
+    print("=" * 60)
+
+# Railway-ready 24/7 greyhound tips bot with automatic 7AM/7PM Perth time
 """
 
 import discord
@@ -575,94 +574,87 @@ def extract_summary(tips_content):
         return "❌ No qualifying greyhound selections found for this day."
 
 async def analyze_greyhound_racing_day(current_time_perth):
-    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis using dynamic language"""
+    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis using explicit AU date anchoring"""
     
     print(f"🔍 Starting comprehensive greyhound analysis for TODAY...")
     
-    # Get current date information for robust search using effective date
-    perth_now = get_effective_date()  # Use effective date instead of current time
-    date_today = perth_now.strftime("%Y-%m-%d")  # e.g., 2024-12-06
-    date_formatted = perth_now.strftime("%B %d, %Y")  # e.g., December 06, 2024
-    day_name = perth_now.strftime("%A")  # e.g., Friday
-    day_short = perth_now.strftime("%a")  # e.g., Fri
+    # Always anchor to Australia/Sydney date for "today"
+    AEST_TZ = pytz.timezone('Australia/Sydney')
     
-    print(f"📅 Date context: {date_formatted} ({day_name}) - {date_today}")
+    au_now = datetime.now(AEST_TZ)
+    au_iso = au_now.strftime("%Y-%m-%d")                  # 2025-08-17
+    au_long = au_now.strftime("%A, %d %B %Y")             # Sunday, 17 August 2025
+    au_time = au_now.strftime("%H:%M AEST")               # 09:12 AEST
     
-    # Expert greyhound racing analyst prompt with robust date handling
-    main_prompt = f"""You are an expert greyhound racing analyst and betting strategist. I need you to analyze ALL greyhound races scheduled for TODAY across Australia.
+    # Convert to Perth time for display
+    PERTH_TZ = pytz.timezone('Australia/Perth')
+    au_now_perth = au_now.astimezone(PERTH_TZ)
+    perth_time = au_now_perth.strftime("%H:%M AWST")
+    
+    print(f"📅 Effective AU date: {au_long} ({au_iso}), time {au_time}")
+    print(f"📅 Perth equivalent: {perth_time}")
+    
+    # Expert greyhound racing analyst prompt with explicit date anchoring
+    main_prompt = f"""You are an expert greyhound racing analyst.
 
-📅 **CURRENT DATE CONTEXT:**
-- Today's Date: {date_formatted} ({day_name}) - THIS IS TODAY, NOT A FUTURE DATE
-- ISO Date: {date_today} - THIS IS THE CURRENT DATE
-- Current Time: {current_time_perth} (Perth/AWST)
-- Day of Week: {day_name}
+# DATE ANCHOR (DO NOT CHANGE)
+Assume the current date is {au_long} and the current time is {au_time} in the Australia/Sydney time zone (AEST/AEDT as appropriate). 
+Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
+Do not reinterpret this as a future date.
 
-IMPORTANT: {date_formatted} is TODAY'S date. This is NOT a future date - this is the actual current date. Race data should be available for today's meetings.
+# WHAT TO DO
+1) Find ALL Australian greyhound meetings scheduled for {au_long}.
+2) Use actual race cards/form for {au_iso}.
+3) If you quote times, show them in AWST and AEST like "19:05 AWST / 21:05 AEST". Also include the track's local time if different.
+4) Never invent data. If data is not yet published for {au_iso}, say so.
 
-Target Analysis: ALL greyhound races for TODAY {day_name} {date_formatted} that haven't started yet
-
-CRITICAL: Use REAL-TIME web search to find TODAY'S actual greyhound race meetings and runners. Do NOT generate fake or placeholder data. {date_formatted} is the CURRENT date, not a future date.
-
-COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
-
-**Step 1: Find ALL Australian Greyhound Meetings for TODAY {day_name} {date_formatted}**
-MUST COMPLETE: Search for ALL greyhound meetings scheduled across Australia for TODAY. THIS IS THE CURRENT DATE, NOT FUTURE. USE THESE EXACT SEARCH TERMS:
+# SEARCH KEYS (must use the explicit date)
+Use queries that include the literal date string "{au_iso}" (YYYY-MM-DD) and "{au_long}":
 
 PRIMARY SEARCHES:
-- Search: "greyhound racing {date_today} Australia"
-- Search: "greyhound racing {day_name} {date_formatted} Australia" 
-- Search: "TAB greyhound racing {date_today}"
-- Search: "{day_name} greyhound racing Australia {date_today}"
-- Search: "thedogs.com.au race cards {date_today}"
-- Search: "greyhound meetings {day_name} Australia"
-- Search: "greyhound racing today Australia" (since {date_today} IS today)
+- "greyhound racing {au_iso} Australia"
+- "TAB greyhound racing {au_iso}"
+- "thedogs.com.au race cards {au_iso}"
+- "{au_long} greyhound racing Australia"
+- "greyhound meetings {au_long} Australia"
 
 BACKUP SEARCHES:
-- Search: "TAB greyhound racing today live"  
-- Search: "live greyhound racing today Australia"
-- Search: "Australian greyhound meetings today"
-- Search: "greyhound racing venues Australia today"
-- Search: "sportsbet greyhound racing today"
-- Search: "racing.com greyhound meetings today"
+- "Australian greyhound meetings {au_iso}"
+- "greyhound racing venues Australia {au_iso}"
+- "sportsbet greyhound racing {au_iso}"
+- "racing.com greyhound meetings {au_iso}"
 
 VENUE-SPECIFIC SEARCHES:
-- Search: "Gosford greyhound racing {date_today}"
-- Search: "Murray Bridge greyhound racing {date_today}"
-- Search: "Bulli greyhound racing {date_today}"
-- Search: "Townsville greyhound racing {date_today}"
-- Search: "Sandown greyhound racing {date_today}"
-- Search: "Cannington greyhound racing {date_today}"
+- "Gosford greyhound racing {au_iso}"
+- "Murray Bridge greyhound racing {au_iso}"
+- "Bulli greyhound racing {au_iso}"
+- "Townsville greyhound racing {au_iso}"
+- "Sandown greyhound racing {au_iso}"
+- "Cannington greyhound racing {au_iso}"
 
-**Step 2: Get REAL Race Form Data for TODAY'S Meetings**
+# COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
+
+**Step 1: Find ALL Australian Greyhound Meetings for {au_long}**
+MUST COMPLETE: Search for ALL greyhound meetings scheduled across Australia for {au_long} ({au_iso}). Use the exact search terms above.
+
+**Step 2: Get REAL Race Form Data for {au_long} Meetings**
 MUST COMPLETE: For each meeting found, search for actual race data:
-- Search: "[Track Name] greyhound race card {date_today}"
-- Search: "greyhound form guide {date_today} [Track Name]"
-- Search: "TheDogs.com.au race cards {date_today}"
-- Search: "greyhound runners and form {date_today}"
-- Search: "[Track Name] {day_name} greyhound racing"
+- "[Track Name] greyhound race card {au_iso}"
+- "greyhound form guide {au_iso} [Track Name]"
+- "TheDogs.com.au race cards {au_iso}"
+- "greyhound runners and form {au_iso}"
 
 **Step 3: Check Current Track Conditions and Scratchings**
 MUST COMPLETE: Get up-to-date information:
-- Search: "greyhound track conditions {date_today} Australia"
-- Search: "greyhound scratchings {date_today}"
-- Search: "track reports greyhound racing {date_today}"
-- Search: "weather forecast greyhound tracks {date_today}"
+- "greyhound track conditions {au_iso} Australia"
+- "greyhound scratchings {au_iso}"
+- "track reports greyhound racing {au_iso}"
 
 **Step 4: Get Current Market Odds**
 MUST COMPLETE: Find current betting markets:
-- Search: "live greyhound racing odds {date_today} Australia"
-- Search: "greyhound betting odds {date_today}"
-- Search: "TAB greyhound odds {date_today}"
-- Search: "sportsbet greyhound odds {day_name}"
-
-**CRITICAL REQUIREMENTS:**
-- Today is {day_name}, {date_formatted} ({date_today}) - THIS IS THE CURRENT DATE
-- Current time is {current_time_perth} AWST
-- ONLY analyze races that start AFTER this time
-- Use REAL dog names from actual race cards
-- NO fake, placeholder, or example data
-- Must find at least some real race meetings for TODAY
-- DO NOT treat this as a future date - {date_formatted} IS TODAY
+- "live greyhound racing odds {au_iso} Australia"
+- "greyhound betting odds {au_iso}"
+- "TAB greyhound odds {au_iso}"
 
 **SELECTION CRITERIA FOR TIPS:**
 - Win probability >35% OR place probability >65%
@@ -670,29 +662,29 @@ MUST COMPLETE: Find current betting markets:
 - Strong value compared to market odds (minimum 20% edge)
 - Races must not have started yet
 
-**OUTPUT FORMAT - ONLY if you find REAL race data:**
+**OUTPUT FORMAT - ONLY if you find REAL race data for {au_long} ({au_iso}):**
 
-🐕 **TOP GREYHOUND SELECTIONS FOR TODAY {day_name} {date_formatted}:**
+🐕 **TOP GREYHOUND SELECTIONS FOR {au_long}:**
 
 For each REAL selection found:
 🐕 **[REAL DOG NAME]** | Race [X] | [REAL TRACK NAME]
-📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m
+📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST / XX:XX AEST] | 📏 **Distance:** [XXX]m
 🎯 **Win:** [XX]% | 🎲 **Place:** [XX]% | 💰 **Odds:** $[X.XX]
 🏆 **Bet:** [Win/Each-Way] | 💵 **Stake:** [0.5-1.5] units
 💡 **Analysis:** [Brief reasoning based on real form data]
 
 **IMPORTANT NOTES:**
-- {day_name} is a typical racing day in Australia - there should be multiple meetings
-- TODAY ({date_formatted}) is the CURRENT date, not a future date
+- {au_long} is a typical racing day in Australia - there should be multiple meetings
+- {au_long} ({au_iso}) is the CURRENT date, not a future date
 - If initial searches don't find data, try alternative search terms
 - Search for both evening and afternoon meetings
 - Cross-reference multiple sources to verify race information
-- Always use the specific date {date_today} in searches for accuracy
+- Always use the specific date {au_iso} in searches for accuracy
 
 **If you still cannot find real race data after comprehensive searching:**
 Provide a detailed report of what searches were attempted and what results were found, then give general advice about checking official racing websites.
 
-REMEMBER: {date_formatted} is TODAY'S date. This is NOT a future analysis request.
+REMEMBER: {au_long} ({au_iso}) is TODAY'S date. This is NOT a future analysis request.
 
 BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMATION."""
 
@@ -742,7 +734,6 @@ BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMAT
         
         full_response = final_answer + disclaimer
         
-        print(f"📊 DEBUG: Response length: {len(full_response)} characters")
         
         # Check for fake data indicators
         fake_data_indicators = [
@@ -763,27 +754,27 @@ BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMAT
         
         if contains_fake_data:
             print("⚠️ DEBUG: Detected fake/template data in response")
-            return f"""🐕 Greyhound Racing Analysis - {day_name} {date_formatted}
+            return f"""🐕 Greyhound Racing Analysis - {au_long}
 
 ❌ **SEARCH ISSUE DETECTED**
 
 The analysis system found race-related content but it appears to contain placeholder or template data rather than real race information.
 
-📅 **TODAY'S DATE**: {day_name}, {date_formatted} ({date_today})
-⏰ **CURRENT TIME**: {current_time_perth}
+📅 **TODAY'S DATE**: {au_long} ({au_iso})
+⏰ **CURRENT TIME**: {perth_time}
 
 🔍 **LIKELY CAUSES:**
-- Race data may not be fully published yet for {day_name}
+- Race data may not be fully published yet for {au_long}
 - Search results contained template/example data
 - Real race cards may be published closer to race times
 
 💡 **RECOMMENDED ACTIONS:**
-1. **Check TAB.com.au** directly for {day_name}'s greyhound meetings
+1. **Check TAB.com.au** directly for {au_long} greyhound meetings
 2. **Visit TheDogs.com.au** for comprehensive race cards
 3. **Try Sportsbet.com.au** for current greyhound markets
 4. **Check again in 2-3 hours** if it's still early in the day
 
-🏁 **TYPICAL {day_name.upper()} RACING:**
+🏁 **TYPICAL RACING:**
 - Evening meetings usually start 7:00-8:00 PM local time
 - Major venues like Gosford, Murray Bridge, Bulli typically race
 - Race cards usually published by midday
@@ -805,24 +796,24 @@ The analysis system found race-related content but it appears to contain placeho
         
         if contains_no_data_message:
             print("⚠️ DEBUG: Detected 'no data found' message")
-            return f"""🐕 Greyhound Racing Analysis - {day_name} {date_formatted}
+            return f"""🐕 Greyhound Racing Analysis - {au_long}
 
 🔍 **COMPREHENSIVE SEARCH COMPLETED**
 
-Despite extensive searching, specific race meeting data was not found for {day_name} {date_formatted}.
+Despite extensive searching, specific race meeting data was not found for {au_long}.
 
 📅 **SEARCH CONTEXT:**
-- Date: {day_name}, {date_formatted} ({date_today})
-- Time: {current_time_perth}
+- Date: {au_long} ({au_iso})
+- Time: {perth_time}
 - Searched: TAB, TheDogs, Racing.com, Sportsbet, venue-specific sites
 
 💡 **RECOMMENDED NEXT STEPS:**
 1. **Manual Check**: Visit TAB.com.au → Greyhounds → Today's Meetings
-2. **TheDogs.com.au**: Check race cards section for {date_today}
-3. **Racing.com**: Look for {day_name} greyhound meetings
+2. **TheDogs.com.au**: Check race cards section for {au_iso}
+3. **Racing.com**: Look for {au_long} greyhound meetings
 4. **State-Specific**: Check GRV (VIC), RWWA (WA), Racing NSW
 
-🏁 **TYPICAL {day_name.upper()} VENUES TO CHECK:**
+🏁 **TYPICAL VENUES TO CHECK:**
 - **NSW**: Gosford, Bulli, Richmond, Wentworth Park
 - **VIC**: Sandown, Healesville, Warragul
 - **QLD**: Albion Park, Ipswich, Townsville
@@ -831,7 +822,7 @@ Despite extensive searching, specific race meeting data was not found for {day_n
 
 ⏰ **TIMING NOTE:**
 - If it's early morning, evening meeting cards may not be published yet
-- Check back after 12:00 PM for {day_name} evening meetings
+- Check back after 12:00 PM for evening meetings
 - Weekend schedules are typically published earlier
 
 ⚠️ **DISCLAIMER**: Racing schedules can vary. Always check official sources for the most current information."""
@@ -841,7 +832,7 @@ Despite extensive searching, specific race meeting data was not found for {day_n
     except asyncio.TimeoutError:
         return f"""⚠️ **ANALYSIS TIMEOUT**
 
-The comprehensive analysis for {day_name} {date_formatted} took longer than expected. 
+The comprehensive analysis for {au_long} took longer than expected. 
 
 🔄 **RECOMMENDED ACTIONS:**
 - Check official racing websites directly
@@ -849,7 +840,7 @@ The comprehensive analysis for {day_name} {date_formatted} took longer than expe
 
 ⚠️ **DISCLAIMER**: Check official racing websites for current race information."""
     except Exception as e:
-        return f"⚠️ Error generating greyhound tips for {day_name} {date_formatted}: {str(e)}"
+        return f"⚠️ Error generating greyhound tips for {au_long}: {str(e)}"
 
 async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Daily Analysis"):
     try:
