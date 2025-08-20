@@ -292,12 +292,29 @@ async def analyze_greyhound_racing_day_with_retry(current_time_perth):
             # Call the main analysis function
             tips_result = await analyze_greyhound_racing_day(current_time_perth)
             
-            # Just return the result - no false data checking
-            print(f"✅ Attempt {attempt + 1}: Analysis completed")
-            return tips_result
+            # Check if we got a valid result
+            if tips_result and len(tips_result.strip()) > 100:
+                print(f"✅ Attempt {attempt + 1}: Analysis completed successfully")
+                return tips_result
+            else:
+                print(f"⚠️ Attempt {attempt + 1}: Got empty or invalid result")
+                if attempt == max_retries - 1:
+                    # Last attempt, return fallback
+                    break
+                continue
                 
         except Exception as e:
-            print(f"❌ Attempt {attempt + 1} failed with error: {str(e)}")
+            error_str = str(e)
+            print(f"❌ Attempt {attempt + 1} failed with error: {error_str}")
+            
+            # Check for specific API errors
+            if "'NoneType' object is not iterable" in error_str:
+                print("🔧 Detected API response issue - using fallback")
+                if attempt == max_retries - 1:
+                    break
+                print(f"⏳ Waiting {retry_delay} seconds before retry...")
+                await asyncio.sleep(retry_delay)
+                continue
             
             if attempt == max_retries - 1:
                 # Final attempt failed with error
@@ -305,7 +322,7 @@ async def analyze_greyhound_racing_day_with_retry(current_time_perth):
 
 After {max_retries} attempts, the bot encountered technical errors.
 
-**Error:** {str(e)}
+**Error:** {error_str}
 
 **Time:** {current_time_perth} AWST
 **Date:** {datetime.now(PERTH_TZ).strftime('%B %d, %Y')}"""
@@ -313,10 +330,42 @@ After {max_retries} attempts, the bot encountered technical errors.
                 await send_fallback_webhook_message(error_message, 
                                                    "🚨 Greyhound Bot - Technical Error")
                 
-                return f"⚠️ Technical error after {max_retries} attempts: {str(e)}"
+                return f"⚠️ Technical error after {max_retries} attempts: {error_str}"
             else:
                 print(f"⏳ Waiting {retry_delay} seconds before retry...")
                 await asyncio.sleep(retry_delay)
+    
+    # All attempts failed, provide fallback response
+    perth_now = datetime.now(PERTH_TZ)
+    fallback_date = perth_now.strftime('%B %d, %Y')
+    
+    return f"""🐕 Greyhound Racing Analysis - {fallback_date}
+
+⚠️ **System Recovery Mode**
+
+After multiple attempts, the AI analysis system is temporarily unavailable.
+
+📅 **Manual Racing Check Required:**
+1. **TAB.com.au** → Greyhounds → Today's Meetings
+2. **TheDogs.com.au** → Race Cards section
+3. **Racing.com** → Greyhound racing section
+
+🏁 **Expected Venues for {fallback_date}:**
+- **NSW**: Gosford, Bulli, Richmond
+- **VIC**: Sandown, Healesville, Warragul  
+- **QLD**: Albion Park, Ipswich, Townsville
+- **SA**: Murray Bridge, Angle Park
+- **WA**: Cannington, Mandurah
+
+💡 **Racing Tips (General Guidelines):**
+- Look for box 1-4 in small fields
+- Avoid wide barriers in big fields
+- Check for gear changes (especially blinkers)
+- Consider track specialists over visitors
+
+🔄 **System Status:** Automatic recovery in progress. Next analysis attempt in 30 minutes.
+
+⚠️ **DISCLAIMER**: Always verify race information on official websites before betting."""
 
 async def placeholder_function_to_remove():
     """This function will be removed"""
@@ -617,17 +666,45 @@ BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMAT
             timeout=600.0  # 10 minute timeout to allow for comprehensive analysis
         )
         
+        # Check if response is valid before processing
+        if not response:
+            print("⚠️ No response received from API")
+            return f"""🐕 Greyhound Racing Analysis - {au_long}
+
+⚠️ **API Response Issue**
+
+The analysis system did not receive a valid response from the AI service.
+
+📅 **Manual Check Required:**
+- Visit TAB.com.au → Greyhounds for today's meetings
+- Check TheDogs.com.au for race cards
+- Review form guides on major racing websites
+
+⚠️ **DISCLAIMER**: Check official racing websites for current race information."""
+        
         print("✅ Analysis completed successfully!")
         
         # Process response parts to separate thoughts from final answer
         final_answer = ""
         
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'thought') and part.thought:
-                # Skip thoughts - don't include them in output
-                continue
+        # Add proper error handling for the response
+        if response and hasattr(response, 'candidates') and response.candidates:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and candidate.content:
+                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            if not hasattr(part, 'thought') or not part.thought:
+                                final_answer += part.text
+                else:
+                    print("⚠️ No content parts found in response")
+                    return f"⚠️ No content received from analysis for {au_long}"
             else:
-                final_answer += part.text
+                print("⚠️ No content found in response candidate")
+                return f"⚠️ Empty response received for {au_long}"
+        else:
+            print("⚠️ No candidates found in response")
+            return f"⚠️ Invalid response received for {au_long}"
         
         # Clean up any step markers but keep all race content
         lines_to_keep = []
