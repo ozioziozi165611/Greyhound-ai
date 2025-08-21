@@ -92,6 +92,10 @@ print(f"🔗 Webhook length: {len(WEBHOOK_URL) if WEBHOOK_URL else 0} characters
 if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('AIza'):
     print(f"⚠️ WARNING: API key doesn't start with 'AIza' - this might be incorrect")
 
+# Australian timezones - MUST be defined before any functions that use them
+PERTH_TZ = pytz.timezone('Australia/Perth')
+AEST_TZ = pytz.timezone('Australia/Sydney')  # AEST timezone for getting correct Australian date
+
 # Data directory - Railway-friendly (will use /app/data in Railway)
 if os.path.exists('/app'):
     # Railway deployment path
@@ -135,10 +139,6 @@ def ensure_data_dir_and_files():
         os.makedirs(DATA_DIR, exist_ok=True)
         print(f"📁 Fallback data directory: {DATA_DIR}")
 
-# Australian timezones
-PERTH_TZ = pytz.timezone('Australia/Perth')
-AEST_TZ = pytz.timezone('Australia/Sydney')  # AEST timezone for getting correct Australian date
-
 def get_effective_date():
     """Get the effective date for analysis - uses Australian date, not American system date"""
     if OVERRIDE_DATE:
@@ -173,9 +173,90 @@ generation_config = {
     "max_output_tokens": 8192  # be sane; 32k often unnecessary/slow
 }
 
-# Tools configuration for Google Search/Web Grounding
-search_tools = [{"google_search": {}}]
-tool_config = {"google_search": {"disable_attribution": False}}
+# Google AI Generative Language API endpoint for search grounding
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
+
+async def call_gemini_with_search_grounding(prompt, au_iso):
+    """Call Gemini API with proper search grounding using REST API"""
+    
+    # Use query parameter for API key (official/stable method)
+    url = f"{GEMINI_API_BASE}/models/gemini-2.5-pro:generateContent?key={GEMINI_API_KEY}"
+    
+    headers = {
+        "Content-Type": "application/json"
+        # Removed x-goog-api-key header - using query param instead
+    }
+    
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt},
+                    {"text": f"DATE_AU={au_iso}"}
+                ]
+            }
+        ],
+        "tools": [{"google_search": {}}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.8,
+            "topK": 30,
+            "maxOutputTokens": 8192
+        }
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=600)) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    
+                    # Extract text from response
+                    if "candidates" in result and result["candidates"]:
+                        candidate = result["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            text_parts = []
+                            for part in candidate["content"]["parts"]:
+                                if "text" in part:
+                                    text_parts.append(part["text"])
+                            return "\n".join(text_parts)
+                    
+                    return "No valid response received from search grounding API"
+                else:
+                    error_text = await response.text()
+                    print(f"❌ Search grounding API error {response.status}: {error_text}")
+                    return None
+                    
+    except Exception as e:
+        print(f"❌ Error calling search grounding API: {str(e)}")
+        return None
+
+async def call_gemini_fallback(prompt):
+    """Fallback to regular Gemini API without search grounding"""
+    try:
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.5-pro",
+            contents=prompt,
+            config=generation_config
+        )
+        
+        # Process response parts
+        final_answer = ""
+        if response and hasattr(response, 'candidates') and response.candidates:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and candidate.content:
+                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            final_answer += part.text
+        
+        return final_answer
+        
+    except Exception as e:
+        print(f"❌ Error in fallback API call: {str(e)}")
+        return None
 
 def load_daily_predictions():
     """Load today's predictions"""
@@ -207,55 +288,54 @@ def save_daily_predictions(predictions_data):
         print(f"Error saving predictions: {e}")
 
 async def test_web_search_capability():
-    """Test if Google Search/Web Grounding is working"""
-    test_prompt = "Use web search to find today's date and tell me what day of the week it is."
+    """Test if Google Search/Web Grounding is working with proper REST API"""
+    test_prompt = """Use web search to find today's date and tell me what day of the week it is. 
+    Search for 'what day is today' and 'current date'.
+    
+    IMPORTANT: Many racing websites are protected or require authentication. If you cannot access 
+    detailed race cards, please report what information you CAN find from publicly available sources."""
     
     try:
-        print("🔍 Testing web search capability...")
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.5-pro",
-                contents=[{"role": "user", "parts": [{"text": test_prompt}]}],
-                tools=search_tools,
-                tool_config=tool_config,
-                config=generation_config
-            ),
-            timeout=60.0
-        )
+        print("🔍 Testing search grounding capability...")
+        print("⚠️ Note: Search grounding provides web snippets, not guaranteed access to all racing data")
         
-        # Process response
-        final_answer = ""
-        if response and hasattr(response, 'candidates') and response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content:
-                if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            final_answer += part.text
+        # Get current Australian date for test
+        au_now = datetime.now(pytz.timezone('Australia/Sydney'))
+        au_iso = au_now.strftime("%Y-%m-%d")
         
-        # Check if web search was used (look for search indicators)
-        search_indicators = [
-            "according to",
-            "based on my search",
-            "I found",
-            "search results",
-            "from the web"
-        ]
+        # Try search grounding first
+        response = await call_gemini_with_search_grounding(test_prompt, au_iso)
         
-        has_search_indicators = any(indicator in final_answer.lower() for indicator in search_indicators)
-        
-        if has_search_indicators:
-            print("✅ Web search appears to be working!")
-            print(f"Test response: {final_answer[:200]}...")
-            return True
+        if response and len(response.strip()) > 50:
+            # Check if search grounding was used (look for search indicators)
+            search_indicators = [
+                "according to",
+                "based on my search",
+                "I found",
+                "search results",
+                "from the web",
+                "searching",
+                "web search",
+                "I searched"
+            ]
+            
+            has_search_indicators = any(indicator in response.lower() for indicator in search_indicators)
+            
+            if has_search_indicators:
+                print("✅ Search grounding appears to be working!")
+                print("💡 Note: Racing data availability depends on website access and paywall restrictions")
+                print(f"Test response: {response[:200]}...")
+                return True
+            else:
+                print("⚠️ Search grounding may not be enabled - response seems like standard generation")
+                print(f"Test response: {response[:200]}...")
+                return False
         else:
-            print("⚠️ Web search may not be enabled - response seems like standard generation")
-            print(f"Test response: {final_answer[:200]}...")
+            print("⚠️ No valid response from search grounding API")
             return False
             
     except Exception as e:
-        print(f"❌ Error testing web search: {str(e)}")
+        print(f"❌ Error testing search grounding: {str(e)}")
         return False
 
 async def generate_greyhound_tips():
@@ -462,28 +542,16 @@ Provide results in this concise format:
 
     try:
         print("🔍 Analyzing race results...")
-        # Get race results using web search with timeout
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.5-pro",
-                contents=[
-                    {"role": "user", "parts": [
-                        {"text": results_prompt},
-                        {"text": f"DATE_AU={au_iso}"}
-                    ]}
-                ],
-                tools=search_tools,
-                tool_config=tool_config,
-                config=generation_config
-            ),
-            timeout=300.0  # 5 minute timeout for results analysis
-        )
         
-        results_content = ""
-        for part in response.candidates[0].content.parts:
-            if not hasattr(part, 'thought') or not part.thought:
-                results_content += part.text
+        # Try search grounding for results
+        response_text = await call_gemini_with_search_grounding(results_prompt, au_iso)
+        
+        if response_text:
+            results_content = response_text
+        else:
+            # Fallback to regular API
+            fallback_response = await call_gemini_fallback(results_prompt)
+            results_content = fallback_response if fallback_response else "No results available"
         
         # Analyze our predictions against results
         learning_analysis = await analyze_prediction_accuracy(predictions_data, results_content)
@@ -633,8 +701,14 @@ Assume the current date is {au_long} and the current time is {au_time} in the Au
 Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
 Do not reinterpret this as a future date.
 
-# WEB SEARCH INSTRUCTIONS
-You MUST use your web search tools to find real-time greyhound racing data. Use these exact search queries:
+# WEB SEARCH INSTRUCTIONS & LIMITATIONS
+You have access to web search tools, but IMPORTANT LIMITATIONS:
+- Many Australian racing sites require authentication or have paywalls
+- You will get search snippets, not full race card access
+- Some data may be incomplete or unavailable through public search
+- Focus on what you CAN find rather than what you cannot
+
+Use these search strategies:
 
 MANDATORY SEARCHES (use web search tools for each):
 1. "greyhound racing meetings Australia {au_iso}"
@@ -650,112 +724,90 @@ VENUE-SPECIFIC SEARCHES (search for active tracks):
 9. "Sandown greyhound racing {au_iso}"
 10. "Cannington greyhound racing {au_iso}"
 
-RACE CARD SEARCHES (for meetings found):
-11. "[Track Name] greyhound race card {au_iso}"
-12. "greyhound form guide {au_iso} [Track Name]"
-13. "greyhound runners and form {au_iso}"
-
-CURRENT CONDITIONS:
-14. "greyhound track conditions {au_iso} Australia"
-15. "greyhound scratchings {au_iso}"
-16. "live greyhound racing odds {au_iso} Australia"
+GENERAL INFORMATION SEARCHES:
+11. "greyhound racing Australia {au_iso} schedule"
+12. "Australian greyhound tracks racing today"
+13. "greyhound meetings {au_iso} NSW VIC QLD SA WA"
 
 # WHAT TO DO
-1) Use web search to find ALL Australian greyhound meetings scheduled for {au_long}.
-2) Use web search to get actual race cards/form for {au_iso}.
-3) If you quote times, show them in AWST and AEST like "19:05 AWST / 21:05 AEST". Also include the track's local time if different.
-4) Never invent data. Only use data found through web searches for {au_iso}.
+1) Use web search to find what Australian greyhound meetings are publicly listed for {au_long}.
+2) If you find meeting information, search for any available race card details.
+3) If you find specific race information, provide it with appropriate disclaimers.
+4) If detailed race cards are not accessible, provide general racing guidance.
 
-# COMPREHENSIVE ANALYSIS PROCESS (MANDATORY WITH WEB SEARCH):
+# REALISTIC OUTPUT APPROACH
 
-**Step 1: Search for ALL Australian Greyhound Meetings for {au_long}**
-MUST USE WEB SEARCH: Search for ALL greyhound meetings scheduled across Australia for {au_long} ({au_iso}). Use the mandatory search terms above.
+**If you find SPECIFIC race data through web search:**
+🐕 **GREYHOUND SELECTIONS FOR {au_long}:**
 
-**Step 2: Get REAL Race Form Data for {au_long} Meetings**
-MUST USE WEB SEARCH: For each meeting found, search for actual race data using web search tools.
-
-**Step 3: Check Current Track Conditions and Scratchings**
-MUST USE WEB SEARCH: Get up-to-date information using web search.
-
-**Step 4: Get Current Market Odds**
-MUST USE WEB SEARCH: Find current betting markets using web search.
-
-**SELECTION CRITERIA FOR TIPS:**
-- Win probability >35% OR place probability >65%
-- Minimum odds of $2.00 (no short-priced favorites)
-- Strong value compared to market odds (minimum 20% edge)
-- Races must not have started yet
-
-**OUTPUT FORMAT - ONLY if you find REAL race data for {au_long} ({au_iso}) through web search:**
-
-🐕 **TOP GREYHOUND SELECTIONS FOR {au_long}:**
-
-For each REAL selection found through web search:
-🐕 **[REAL DOG NAME]** | Race [X] | [REAL TRACK NAME]
+For each selection found:
+🐕 **[DOG NAME]** | Race [X] | [TRACK NAME]
 📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST / XX:XX AEST] | 📏 **Distance:** [XXX]m
-🎯 **Win:** [XX]% | 🎲 **Place:** [XX]% | 💰 **Odds:** $[X.XX]
-🏆 **Bet:** [Win/Each-Way] | 💵 **Stake:** [0.5-1.5] units
-💡 **Analysis:** [Brief reasoning based on real form data from web search]
+💰 **Current Market Info:** [Based on available data]
+💡 **Analysis:** [Based on publicly available information]
+
+**If detailed race cards are NOT accessible through search:**
+🐕 **GREYHOUND RACING GUIDE FOR {au_long}:**
+
+📅 **Meetings Found:** [List any meetings you can identify]
+� **Search Results:** [Summarize what public information was available]
+
+💡 **GENERAL RACING TIPS FOR {au_long}:**
+- Check TAB.com.au directly for current odds and race cards
+- Look for early market movers in the betting
+- Consider track conditions if available
+- Focus on experienced trainers and proven greyhounds
+
+📝 **RECOMMENDED MANUAL CHECKS:**
+1. Visit TAB.com.au → Greyhounds → Today's Meetings
+2. Check TheDogs.com.au for detailed race cards
+3. Review track-specific websites for conditions
 
 **IMPORTANT NOTES:**
-- {au_long} is a typical racing day in Australia - there should be multiple meetings
-- {au_long} ({au_iso}) is the CURRENT date, not a future date
-- Use web search tools extensively to find real data
-- Cross-reference multiple sources found through web search
-- Always use the specific date {au_iso} in web searches for accuracy
+- {au_long} ({au_iso}) is TODAY'S date
+- Web search provides public snippets only
+- Many racing details require direct website access
+- Always verify information on official racing websites
 
-**If web search doesn't find real race data:**
-Provide a detailed report of what web searches were attempted and what results were found, then give general advice about checking official racing websites.
+**If web search finds NO racing information:**
+Provide a comprehensive guide about where to manually check for {au_long} greyhound racing.
 
-REMEMBER: {au_long} ({au_iso}) is TODAY'S date. This is NOT a future analysis request. Use web search tools to find real data.
+REMEMBER: Be honest about search limitations. Provide what you CAN find, acknowledge what you cannot access.
 
-BEGIN ANALYSIS - USE WEB SEARCH TOOLS AND PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMATION."""
+BEGIN ANALYSIS - USE WEB SEARCH AND BE REALISTIC ABOUT DATA AVAILABILITY."""
 
     try:
         print("🔍 Starting comprehensive greyhound analysis...")
         print("⏳ This may take 3-5 minutes for complete web research and analysis...")
         
-        # Try with web search first
+        # Try with search grounding first
         try:
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.models.generate_content,
-                    model="gemini-2.5-pro",
-                    contents=[
-                        {"role": "user", "parts": [
-                            {"text": main_prompt},
-                            {"text": f"DATE_AU={au_iso}"}
-                        ]}
-                    ],
-                    tools=search_tools,
-                    tool_config=tool_config,
-                    config=generation_config
-                ),
-                timeout=600.0  # 10 minute timeout to allow for comprehensive analysis
-            )
-            print("✅ Analysis completed with web search!")
+            response = await call_gemini_with_search_grounding(main_prompt, au_iso)
             
-        except Exception as web_search_error:
-            print(f"⚠️ Web search failed: {str(web_search_error)}")
-            print("🔄 Falling back to text generation without web search...")
+            if response and len(response.strip()) > 100:
+                print("✅ Analysis completed with search grounding!")
+                final_answer = response
+            else:
+                raise Exception("Invalid response from search grounding API")
+            
+        except Exception as search_error:
+            print(f"⚠️ Search grounding failed: {str(search_error)}")
+            print("🔄 Falling back to text generation without search grounding...")
             
             # Fallback to regular generation without tools
             fallback_prompt = main_prompt.replace("You MUST use your web search tools", "You should use your knowledge and reasoning")
             fallback_prompt = fallback_prompt.replace("MUST USE WEB SEARCH:", "SHOULD ATTEMPT:")
             
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    client.models.generate_content,
-                    model="gemini-2.5-pro",
-                    contents=fallback_prompt,
-                    config=generation_config
-                ),
-                timeout=600.0
-            )
-            print("✅ Analysis completed with text generation fallback!")
+            response = await call_gemini_fallback(fallback_prompt)
+            
+            if response:
+                print("✅ Analysis completed with text generation fallback!")
+                final_answer = response
+            else:
+                raise Exception("Both search grounding and fallback failed")
         
         # Check if response is valid before processing
-        if not response:
+        if not final_answer:
             print("⚠️ No response received from API")
             return f"""🐕 Greyhound Racing Analysis - {au_long}
 
@@ -773,26 +825,7 @@ The analysis system did not receive a valid response from the AI service.
         print("✅ Analysis completed successfully!")
         
         # Process response parts to separate thoughts from final answer
-        final_answer = ""
-        
-        # Add proper error handling for the response
-        if response and hasattr(response, 'candidates') and response.candidates:
-            candidate = response.candidates[0]
-            if hasattr(candidate, 'content') and candidate.content:
-                if hasattr(candidate.content, 'parts') and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            if not hasattr(part, 'thought') or not part.thought:
-                                final_answer += part.text
-                else:
-                    print("⚠️ No content parts found in response")
-                    return f"⚠️ No content received from analysis for {au_long}"
-            else:
-                print("⚠️ No content found in response candidate")
-                return f"⚠️ Empty response received for {au_long}"
-        else:
-            print("⚠️ No candidates found in response")
-            return f"⚠️ Invalid response received for {au_long}"
+        # final_answer is already set above
         
         # Clean up any step markers but keep all race content
         lines_to_keep = []
@@ -931,14 +964,16 @@ async def main():
     ensure_data_dir_and_files()
     
     # Test web search capability
-    print("🔍 Testing Google Search/Web Grounding capability...")
+    print("🔍 Testing Google Search Grounding capability...")
     web_search_working = await test_web_search_capability()
     
     if web_search_working:
-        print("✅ Web search is enabled - bot will use real-time data")
+        print("✅ Search grounding is enabled - bot will attempt to use real-time web data")
+        print("⚠️ Note: Racing data availability depends on website access and paywall restrictions")
     else:
-        print("⚠️ Web search may not be available - bot will use text generation only")
-        print("💡 If you have access to Google Search in Gemini, ensure your API key has the proper permissions")
+        print("⚠️ Search grounding may not be available - bot will use text generation only")
+        print("💡 Ensure your Google Cloud project has Search Grounding enabled in the Generative Language API")
+        print("💡 Even with search grounding, detailed race cards may not be accessible due to paywalls")
     
     print("=" * 60)
     
