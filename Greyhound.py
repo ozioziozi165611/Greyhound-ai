@@ -1034,10 +1034,15 @@ The comprehensive analysis for {au_long} took longer than expected.
     except Exception as e:
         return f"⚠️ Error generating greyhound tips for {au_long}: {str(e)}"
 
-async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Daily Analysis"):
+async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Daily Analysis", mention_user=True):
     try:
         async with aiohttp.ClientSession() as session:
             webhook = Webhook.from_url(WEBHOOK_URL, session=session)
+            
+            # Add user mention at the start if requested
+            message_content = ""
+            if mention_user:
+                message_content = "<@1316242093496078346>\n"
             
             # Create and send the embed
             embed = discord.Embed(
@@ -1049,9 +1054,9 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
             
             # Split content into multiple embeds if too long
             if len(content) > 4096:
-                remaining_content = content[4096:]
-                await webhook.send(embed=embed)
+                await webhook.send(content=message_content, embed=embed)
                 
+                remaining_content = content[4096:]
                 while remaining_content:
                     chunk = remaining_content[:4096]
                     remaining_content = remaining_content[4096:]
@@ -1060,7 +1065,10 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
                     await webhook.send(embed=embed)
                     await asyncio.sleep(1)  # Small delay between messages
             else:
-                await webhook.send(embed=embed)
+                await webhook.send(content=message_content, embed=embed)
+                
+    except Exception as e:
+        print(f"Error sending webhook: {str(e)}")
                 
     except Exception as e:
         print(f"Error sending webhook: {str(e)}")
@@ -1144,41 +1152,27 @@ async def main():
         scheduler_status = load_scheduler_status()
         print(f"Loaded scheduler status: {scheduler_status}")
         
-        # Generate fresh tips immediately on first run
-        print("🚀 Generating fresh tips immediately on startup...")
+        # Send startup notification but DO NOT generate tips immediately
+        print("🚀 Bot started - sending startup notification...")
         try:
-            tips = await generate_greyhound_tips()
-            await send_webhook_message(tips, title="🚀 Fresh Greyhound Tips - Bot Started")
-            print("✅ Fresh tips posted successfully!")
-        except Exception as e:
-            error_msg = str(e)
-            print(f"❌ Error generating fresh tips on startup: {error_msg}")
+            startup_message = f"""🚀 **GREYHOUND BOT ONLINE**
+
+✅ **STATUS:** Bot successfully started and monitoring schedule
+⏰ **SCHEDULE:** Daily tips at 07:00 AWST only
+📅 **TODAY:** {datetime.now(AEST_TZ).strftime('%A, %B %d, %Y')}
+
+🔄 **NEXT SCHEDULED RUN:**
+- Morning Tips: 07:00 AWST (daily)
+- Coverage: All Australian greyhound meetings
+
+🛠️ **MODE:** Schedule monitoring active"""
             
-            # Send a startup notification even if tips failed
-            try:
-                fallback_message = f"""🚀 **GREYHOUND BOT STARTED**
-
-⚠️ **STARTUP ISSUE DETECTED**
-The bot started successfully but encountered an issue generating initial tips:
-`{error_msg[:200]}...` 
-
-🔄 **AUTOMATIC RECOVERY:**
-- Bot is now running in schedule mode
-- Will retry at 7:00 AM AWST (morning tips)
-- Will attempt evening analysis at 7:00 PM AWST
-
-⏰ **NEXT SCHEDULED RUNS:**
-- Morning: 07:00 AWST daily
-- Evening: 19:00 AWST daily
-
-🛠️ **STATUS:** Bot monitoring active, waiting for next scheduled run."""
-                
-                await send_webhook_message(fallback_message, title="🚀 Greyhound Bot - Startup Complete")
-                print("📢 Startup notification sent to Discord")
-            except Exception as webhook_error:
-                print(f"❌ Failed to send startup notification: {webhook_error}")
+            await send_webhook_message(startup_message, title="🚀 Greyhound Bot - Online", mention_user=False)
+            print("📢 Startup notification sent successfully")
+        except Exception as e:
+            print(f"❌ Failed to send startup notification: {e}")
         
-        print("📅 Now entering scheduler mode...")
+        print("📅 Now entering precise scheduler mode...")
         
         try:
             while True:
@@ -1190,33 +1184,33 @@ The bot started successfully but encountered an issue generating initial tips:
                 current_hour = current_time.hour
                 current_minute = current_time.minute
                 
-                # Check if it's morning window (6-8 AM for better reliability)
-                if (6 <= current_hour <= 8 and current_minute < 30 and 
+                # PRECISE 7AM CHECK - Only run at exactly 7:00-7:05 AM
+                if (current_hour == 7 and 0 <= current_minute <= 5 and 
                     scheduler_status.get('last_morning_run') != today_str):
                     
-                    print(f"🌅 Triggering 7AM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
+                    print(f"🌅 EXECUTING 7AM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
                     try:
                         tips = await generate_greyhound_tips()
-                        await send_webhook_message(tips, title="🌅 Daily Greyhound Tips - 7AM Perth")
+                        await send_webhook_message(tips, title="🌅 Daily Greyhound Tips - 7AM Perth", mention_user=True)
                         
-                        # Update status
+                        # Update status to prevent double posting
                         scheduler_status['last_morning_run'] = today_str
                         save_scheduler_status(scheduler_status)
                         print(f"✅ 7AM tips posted successfully for {today_str}")
                         
                     except Exception as e:
                         print(f"❌ Error in 7AM run: {str(e)}")
+                        # Send error notification
+                        try:
+                            error_msg = f"⚠️ **7AM TIPS ERROR**\n\nFailed to generate tips at 7AM: {str(e)[:200]}\n\nWill retry tomorrow at 7AM."
+                            await send_webhook_message(error_msg, title="⚠️ Greyhound Bot - Error", mention_user=True)
+                        except:
+                            pass
                 
-                # 7PM evening analysis has been disabled
-                # elif (current_hour == 19 and current_minute < 5 and 
-                #       scheduler_status.get('last_evening_run') != today_str):
-                #     print("🌇 7PM analysis has been disabled")
-                
-                # Debug output every 30 minutes
-                if current_minute in [0, 30]:
-                    next_morning = "today" if scheduler_status.get('last_morning_run') != today_str else "tomorrow"
-                    next_evening = "today" if scheduler_status.get('last_evening_run') != today_str else "tomorrow"
-                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next morning run: {next_morning} at 07:00, Next evening run: {next_evening} at 19:00")
+                # Debug output every hour only (reduced spam)
+                if current_minute == 0:
+                    next_run = "today" if scheduler_status.get('last_morning_run') != today_str else "tomorrow"
+                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next run: {next_run} at 07:00 AWST")
                 
                 await asyncio.sleep(60)  # Check every minute
                 
@@ -1230,7 +1224,7 @@ The bot started successfully but encountered an issue generating initial tips:
             print("Generating greyhound tips (one-off)...")
             tips = await generate_greyhound_tips()
             print("Sending greyhound tips to Discord...")
-            await send_webhook_message(tips)
+            await send_webhook_message(tips, title="🐕 Greyhound Tips - Manual Run", mention_user=True)
             print("Done.")
         except Exception as e:
             print(f"Error: {str(e)}")
