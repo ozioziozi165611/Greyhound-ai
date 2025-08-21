@@ -165,13 +165,17 @@ def get_effective_date():
 # Initialize Gemini client with proper SDK
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Configure generation with simple config (no thinking or tools for now)
+# Configure generation with web search tools enabled
 generation_config = {
     "temperature": 0.2,
     "top_p": 0.8,
     "top_k": 30,
     "max_output_tokens": 8192  # be sane; 32k often unnecessary/slow
 }
+
+# Tools configuration for Google Search/Web Grounding
+search_tools = [{"google_search": {}}]
+tool_config = {"google_search": {"disable_attribution": False}}
 
 def load_daily_predictions():
     """Load today's predictions"""
@@ -201,6 +205,58 @@ def save_daily_predictions(predictions_data):
             json.dump(predictions_data, f, indent=2)
     except Exception as e:
         print(f"Error saving predictions: {e}")
+
+async def test_web_search_capability():
+    """Test if Google Search/Web Grounding is working"""
+    test_prompt = "Use web search to find today's date and tell me what day of the week it is."
+    
+    try:
+        print("🔍 Testing web search capability...")
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-pro",
+                contents=[{"role": "user", "parts": [{"text": test_prompt}]}],
+                tools=search_tools,
+                tool_config=tool_config,
+                config=generation_config
+            ),
+            timeout=60.0
+        )
+        
+        # Process response
+        final_answer = ""
+        if response and hasattr(response, 'candidates') and response.candidates:
+            candidate = response.candidates[0]
+            if hasattr(candidate, 'content') and candidate.content:
+                if hasattr(candidate.content, 'parts') and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'text') and part.text:
+                            final_answer += part.text
+        
+        # Check if web search was used (look for search indicators)
+        search_indicators = [
+            "according to",
+            "based on my search",
+            "I found",
+            "search results",
+            "from the web"
+        ]
+        
+        has_search_indicators = any(indicator in final_answer.lower() for indicator in search_indicators)
+        
+        if has_search_indicators:
+            print("✅ Web search appears to be working!")
+            print(f"Test response: {final_answer[:200]}...")
+            return True
+        else:
+            print("⚠️ Web search may not be enabled - response seems like standard generation")
+            print(f"Test response: {final_answer[:200]}...")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error testing web search: {str(e)}")
+        return False
 
 async def generate_greyhound_tips():
     """Generate greyhound tips for today's races only (Perth timezone)"""
@@ -375,27 +431,32 @@ async def placeholder_function_to_remove():
     print("Learning system has been disabled as requested")
     return "Learning system disabled."
     
-    # Get race results for analysis using dynamic language
+    # Get race results for analysis using dynamic language with web search
     results_prompt = f"""🔍 GREYHOUND RACE RESULTS ANALYSIS - TODAY'S RESULTS
 
-Please search for TODAY'S Australian greyhound racing results and provide:
+You are a greyhound racing results analyst with access to real-time web search.
+
+Use web search tools to find TODAY'S Australian greyhound racing results and provide:
 
 1. Winners of all races that have finished today
-2. Finishing positions for all greyhounds
+2. Finishing positions for all greyhounds  
 3. Starting prices/odds
 4. Track conditions
 5. Winning margins and times
 
-Search across:
-- TheDogs.com.au results for today
-- Racing NSW greyhound results today
-- GRV (Greyhound Racing Victoria) results today
-- RWWA greyhound results today
-- TAB greyhound results today
-- Other Australian greyhound racing result sites
+MANDATORY WEB SEARCHES:
+- "greyhound racing results Australia {au_iso}"
+- "TheDogs.com.au results {au_iso}"
+- "Racing NSW greyhound results {au_iso}"
+- "GRV greyhound racing results {au_iso}"
+- "RWWA greyhound results {au_iso}"
+- "TAB greyhound results {au_iso}"
+- "greyhound racing winners {au_iso}"
+
+Use web search tools to find results across all Australian venues for {au_iso}.
 
 Provide results in this concise format:
-🐕 RACE X - TRACK NAME (TODAY)
+🐕 RACE X - TRACK NAME ({au_iso})
 🥇 Winner: GREYHOUND NAME (Box: X, Trainer: Y, SP: $X.XX, Time: XX.XXs)
 ---"""
 
@@ -406,7 +467,14 @@ Provide results in this concise format:
             asyncio.to_thread(
                 client.models.generate_content,
                 model="gemini-2.5-pro",
-                contents=results_prompt,
+                contents=[
+                    {"role": "user", "parts": [
+                        {"text": results_prompt},
+                        {"text": f"DATE_AU={au_iso}"}
+                    ]}
+                ],
+                tools=search_tools,
+                tool_config=tool_config,
                 config=generation_config
             ),
             timeout=300.0  # 5 minute timeout for results analysis
@@ -557,67 +625,60 @@ async def analyze_greyhound_racing_day(current_time_perth):
     print(f"📅 Effective AU date: {au_long} ({au_iso}), time {au_time}")
     print(f"📅 Perth equivalent: {perth_time}")
     
-    # Expert greyhound racing analyst prompt with explicit date anchoring
-    main_prompt = f"""You are an expert greyhound racing analyst.
+    # Expert greyhound racing analyst prompt with explicit date anchoring and web search instructions
+    main_prompt = f"""You are an expert greyhound racing analyst with access to real-time web search.
 
 # DATE ANCHOR (DO NOT CHANGE)
 Assume the current date is {au_long} and the current time is {au_time} in the Australia/Sydney time zone (AEST/AEDT as appropriate). 
 Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
 Do not reinterpret this as a future date.
 
+# WEB SEARCH INSTRUCTIONS
+You MUST use your web search tools to find real-time greyhound racing data. Use these exact search queries:
+
+MANDATORY SEARCHES (use web search tools for each):
+1. "greyhound racing meetings Australia {au_iso}"
+2. "TAB greyhound racing {au_iso} today"
+3. "thedogs.com.au race cards {au_iso}"
+4. "greyhound racing fixtures {au_long} Australia"
+5. "Australian greyhound meetings {au_iso}"
+
+VENUE-SPECIFIC SEARCHES (search for active tracks):
+6. "Gosford greyhound racing {au_iso}"
+7. "Murray Bridge greyhound racing {au_iso}"
+8. "Bulli greyhound racing {au_iso}"
+9. "Sandown greyhound racing {au_iso}"
+10. "Cannington greyhound racing {au_iso}"
+
+RACE CARD SEARCHES (for meetings found):
+11. "[Track Name] greyhound race card {au_iso}"
+12. "greyhound form guide {au_iso} [Track Name]"
+13. "greyhound runners and form {au_iso}"
+
+CURRENT CONDITIONS:
+14. "greyhound track conditions {au_iso} Australia"
+15. "greyhound scratchings {au_iso}"
+16. "live greyhound racing odds {au_iso} Australia"
+
 # WHAT TO DO
-1) Find ALL Australian greyhound meetings scheduled for {au_long}.
-2) Use actual race cards/form for {au_iso}.
+1) Use web search to find ALL Australian greyhound meetings scheduled for {au_long}.
+2) Use web search to get actual race cards/form for {au_iso}.
 3) If you quote times, show them in AWST and AEST like "19:05 AWST / 21:05 AEST". Also include the track's local time if different.
-4) Never invent data. If data is not yet published for {au_iso}, say so.
+4) Never invent data. Only use data found through web searches for {au_iso}.
 
-# SEARCH KEYS (must use the explicit date)
-Use queries that include the literal date string "{au_iso}" (YYYY-MM-DD) and "{au_long}":
+# COMPREHENSIVE ANALYSIS PROCESS (MANDATORY WITH WEB SEARCH):
 
-PRIMARY SEARCHES:
-- "greyhound racing {au_iso} Australia"
-- "TAB greyhound racing {au_iso}"
-- "thedogs.com.au race cards {au_iso}"
-- "{au_long} greyhound racing Australia"
-- "greyhound meetings {au_long} Australia"
-
-BACKUP SEARCHES:
-- "Australian greyhound meetings {au_iso}"
-- "greyhound racing venues Australia {au_iso}"
-- "sportsbet greyhound racing {au_iso}"
-- "racing.com greyhound meetings {au_iso}"
-
-VENUE-SPECIFIC SEARCHES:
-- "Gosford greyhound racing {au_iso}"
-- "Murray Bridge greyhound racing {au_iso}"
-- "Bulli greyhound racing {au_iso}"
-- "Townsville greyhound racing {au_iso}"
-- "Sandown greyhound racing {au_iso}"
-- "Cannington greyhound racing {au_iso}"
-
-# COMPREHENSIVE ANALYSIS PROCESS (MANDATORY):
-
-**Step 1: Find ALL Australian Greyhound Meetings for {au_long}**
-MUST COMPLETE: Search for ALL greyhound meetings scheduled across Australia for {au_long} ({au_iso}). Use the exact search terms above.
+**Step 1: Search for ALL Australian Greyhound Meetings for {au_long}**
+MUST USE WEB SEARCH: Search for ALL greyhound meetings scheduled across Australia for {au_long} ({au_iso}). Use the mandatory search terms above.
 
 **Step 2: Get REAL Race Form Data for {au_long} Meetings**
-MUST COMPLETE: For each meeting found, search for actual race data:
-- "[Track Name] greyhound race card {au_iso}"
-- "greyhound form guide {au_iso} [Track Name]"
-- "TheDogs.com.au race cards {au_iso}"
-- "greyhound runners and form {au_iso}"
+MUST USE WEB SEARCH: For each meeting found, search for actual race data using web search tools.
 
 **Step 3: Check Current Track Conditions and Scratchings**
-MUST COMPLETE: Get up-to-date information:
-- "greyhound track conditions {au_iso} Australia"
-- "greyhound scratchings {au_iso}"
-- "track reports greyhound racing {au_iso}"
+MUST USE WEB SEARCH: Get up-to-date information using web search.
 
 **Step 4: Get Current Market Odds**
-MUST COMPLETE: Find current betting markets:
-- "live greyhound racing odds {au_iso} Australia"
-- "greyhound betting odds {au_iso}"
-- "TAB greyhound odds {au_iso}"
+MUST USE WEB SEARCH: Find current betting markets using web search.
 
 **SELECTION CRITERIA FOR TIPS:**
 - Win probability >35% OR place probability >65%
@@ -625,46 +686,73 @@ MUST COMPLETE: Find current betting markets:
 - Strong value compared to market odds (minimum 20% edge)
 - Races must not have started yet
 
-**OUTPUT FORMAT - ONLY if you find REAL race data for {au_long} ({au_iso}):**
+**OUTPUT FORMAT - ONLY if you find REAL race data for {au_long} ({au_iso}) through web search:**
 
 🐕 **TOP GREYHOUND SELECTIONS FOR {au_long}:**
 
-For each REAL selection found:
+For each REAL selection found through web search:
 🐕 **[REAL DOG NAME]** | Race [X] | [REAL TRACK NAME]
 📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST / XX:XX AEST] | 📏 **Distance:** [XXX]m
 🎯 **Win:** [XX]% | 🎲 **Place:** [XX]% | 💰 **Odds:** $[X.XX]
 🏆 **Bet:** [Win/Each-Way] | 💵 **Stake:** [0.5-1.5] units
-💡 **Analysis:** [Brief reasoning based on real form data]
+💡 **Analysis:** [Brief reasoning based on real form data from web search]
 
 **IMPORTANT NOTES:**
 - {au_long} is a typical racing day in Australia - there should be multiple meetings
 - {au_long} ({au_iso}) is the CURRENT date, not a future date
-- If initial searches don't find data, try alternative search terms
-- Search for both evening and afternoon meetings
-- Cross-reference multiple sources to verify race information
-- Always use the specific date {au_iso} in searches for accuracy
+- Use web search tools extensively to find real data
+- Cross-reference multiple sources found through web search
+- Always use the specific date {au_iso} in web searches for accuracy
 
-**If you still cannot find real race data after comprehensive searching:**
-Provide a detailed report of what searches were attempted and what results were found, then give general advice about checking official racing websites.
+**If web search doesn't find real race data:**
+Provide a detailed report of what web searches were attempted and what results were found, then give general advice about checking official racing websites.
 
-REMEMBER: {au_long} ({au_iso}) is TODAY'S date. This is NOT a future analysis request.
+REMEMBER: {au_long} ({au_iso}) is TODAY'S date. This is NOT a future analysis request. Use web search tools to find real data.
 
-BEGIN ANALYSIS - PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMATION."""
+BEGIN ANALYSIS - USE WEB SEARCH TOOLS AND PROVIDE ONLY REAL DATA WITH ACTUAL DOG NAMES AND TRACK INFORMATION."""
 
     try:
         print("🔍 Starting comprehensive greyhound analysis...")
         print("⏳ This may take 3-5 minutes for complete web research and analysis...")
         
-        # Generate greyhound tips using REAL web search + deep thinking with extended timeout
-        response = await asyncio.wait_for(
-            asyncio.to_thread(
-                client.models.generate_content,
-                model="gemini-2.5-pro",
-                contents=main_prompt,
-                config=generation_config
-            ),
-            timeout=600.0  # 10 minute timeout to allow for comprehensive analysis
-        )
+        # Try with web search first
+        try:
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-2.5-pro",
+                    contents=[
+                        {"role": "user", "parts": [
+                            {"text": main_prompt},
+                            {"text": f"DATE_AU={au_iso}"}
+                        ]}
+                    ],
+                    tools=search_tools,
+                    tool_config=tool_config,
+                    config=generation_config
+                ),
+                timeout=600.0  # 10 minute timeout to allow for comprehensive analysis
+            )
+            print("✅ Analysis completed with web search!")
+            
+        except Exception as web_search_error:
+            print(f"⚠️ Web search failed: {str(web_search_error)}")
+            print("🔄 Falling back to text generation without web search...")
+            
+            # Fallback to regular generation without tools
+            fallback_prompt = main_prompt.replace("You MUST use your web search tools", "You should use your knowledge and reasoning")
+            fallback_prompt = fallback_prompt.replace("MUST USE WEB SEARCH:", "SHOULD ATTEMPT:")
+            
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model="gemini-2.5-pro",
+                    contents=fallback_prompt,
+                    config=generation_config
+                ),
+                timeout=600.0
+            )
+            print("✅ Analysis completed with text generation fallback!")
         
         # Check if response is valid before processing
         if not response:
@@ -841,6 +929,18 @@ async def main():
     
     # Ensure data directory and files exist for Railway deployment
     ensure_data_dir_and_files()
+    
+    # Test web search capability
+    print("🔍 Testing Google Search/Web Grounding capability...")
+    web_search_working = await test_web_search_capability()
+    
+    if web_search_working:
+        print("✅ Web search is enabled - bot will use real-time data")
+    else:
+        print("⚠️ Web search may not be available - bot will use text generation only")
+        print("💡 If you have access to Google Search in Gemini, ensure your API key has the proper permissions")
+    
+    print("=" * 60)
     
     # Check for Railway environment variable to determine mode
     # Default to 'schedule' mode for automatic daily operation
