@@ -672,6 +672,99 @@ def extract_summary(tips_content):
     else:
         return "❌ No qualifying greyhound selections found for this day."
 
+def extract_race_info_greyhound(text: str) -> dict:
+    """Extract track and race number from greyhound analysis text."""
+    race_info = {'track': None, 'race_number': None}
+    
+    # Look for race patterns in greyhound tips
+    patterns = [
+        r'Race\s*(\d+)\s*(?:\||\-)\s*([A-Za-z\s]+?)(?:\s*\||\s*$)',  # "Race 6 | Wentworth Park"
+        r'([A-Za-z\s]+?)\s*(?:\||\-)\s*Race\s*(\d+)',                # "Wentworth Park | Race 6"
+        r'🐕.*?Race\s*(\d+).*?([A-Za-z\s]+)',                       # In dog line
+        r'([A-Za-z\s]+)\s*\-\s*Race\s*(\d+)',                       # "Track - Race X"
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            if pattern.startswith(r'Race\s*(\d+)'):
+                race_info['race_number'] = match.group(1)
+                race_info['track'] = match.group(2).strip()
+            else:
+                race_info['track'] = match.group(1).strip()
+                race_info['race_number'] = match.group(2)
+            break
+    
+    # Clean up track name
+    if race_info['track']:
+        race_info['track'] = re.sub(r'\s+', ' ', race_info['track']).strip()
+    
+    return race_info
+
+def filter_diverse_selections(response_text: str) -> str:
+    """Filter greyhound selections to ensure diversification across different races."""
+    lines = response_text.split('\n')
+    used_races = set()
+    filtered_lines = []
+    current_selection = []
+    in_selection = False
+    
+    for line in lines:
+        # Check if this is a dog selection line
+        if line.strip().startswith('🐕 **') and '**' in line:
+            # Process previous selection if any
+            if current_selection:
+                race_info = extract_race_info_greyhound('\n'.join(current_selection))
+                race_key = None
+                
+                if race_info['track'] and race_info['race_number']:
+                    race_key = f"{race_info['track'].lower().strip()}_{race_info['race_number']}"
+                elif race_info['track']:
+                    race_key = f"{race_info['track'].lower().strip()}_unknown"
+                
+                # Only add if not a duplicate race
+                if not race_key or race_key not in used_races:
+                    filtered_lines.extend(current_selection)
+                    if race_key:
+                        used_races.add(race_key)
+                        print(f"✅ Added selection from {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+                else:
+                    print(f"🚨 FILTERED duplicate race: {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+            
+            # Start new selection
+            current_selection = [line]
+            in_selection = True
+        elif in_selection and (line.strip().startswith('🐕 **') or line.strip() == '' or line.strip().startswith('---')):
+            # End of current selection
+            in_selection = False
+            if line.strip() == '' or line.strip().startswith('---'):
+                current_selection.append(line)
+        elif in_selection:
+            current_selection.append(line)
+        else:
+            # Non-selection lines (headers, etc.)
+            if not in_selection:
+                filtered_lines.append(line)
+    
+    # Process final selection
+    if current_selection:
+        race_info = extract_race_info_greyhound('\n'.join(current_selection))
+        race_key = None
+        
+        if race_info['track'] and race_info['race_number']:
+            race_key = f"{race_info['track'].lower().strip()}_{race_info['race_number']}"
+        elif race_info['track']:
+            race_key = f"{race_info['track'].lower().strip()}_unknown"
+        
+        if not race_key or race_key not in used_races:
+            filtered_lines.extend(current_selection)
+            if race_key:
+                used_races.add(race_key)
+                print(f"✅ Added final selection from {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+    
+    print(f"📊 DIVERSIFICATION RESULT: {len(used_races)} selections from different races")
+    return '\n'.join(filtered_lines)
+
 async def analyze_greyhound_racing_day(current_time_perth):
     """Analyze TODAY only (Perth date) with comprehensive greyhound analysis using explicit AU date anchoring"""
     
@@ -701,80 +794,104 @@ Assume the current date is {au_long} and the current time is {au_time} in the Au
 Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
 Do not reinterpret this as a future date.
 
-# WEB SEARCH INSTRUCTIONS & LIMITATIONS
-You have access to web search tools, but IMPORTANT LIMITATIONS:
-- Many Australian racing sites require authentication or have paywalls
-- You will get search snippets, not full race card access
-- Some data may be incomplete or unavailable through public search
-- Focus on what you CAN find rather than what you cannot
+# CRITICAL SELECTION RULES
+🚨 MAXIMUM ONE GREYHOUND PER RACE - Never select multiple dogs from the same race
+🚨 SCAN ALL MEETINGS - Cover as many different tracks and meetings as possible
+🚨 DIVERSIFICATION MANDATORY - Spread selections across different venues and race numbers
+🚨 MAXIMUM 1.5 UNITS STAKE - Never recommend stakes above 1.5 units per selection
 
-Use these search strategies:
+# WEB SEARCH INSTRUCTIONS & COMPREHENSIVE COVERAGE
+You have access to web search tools. Search ALL major Australian greyhound venues:
 
-MANDATORY SEARCHES (use web search tools for each):
-1. "greyhound racing meetings Australia {au_iso}"
-2. "TAB greyhound racing {au_iso} today"
-3. "thedogs.com.au race cards {au_iso}"
-4. "greyhound racing fixtures {au_long} Australia"
-5. "Australian greyhound meetings {au_iso}"
+MANDATORY COMPREHENSIVE SEARCHES (use web search tools for each):
+1. "greyhound racing meetings Australia {au_iso} all venues"
+2. "TAB greyhound racing {au_iso} today complete schedule"
+3. "thedogs.com.au race cards {au_iso} all meetings"
+4. "Australian greyhound racing fixtures {au_long} nationwide"
 
-VENUE-SPECIFIC SEARCHES (search for active tracks):
-6. "Gosford greyhound racing {au_iso}"
-7. "Murray Bridge greyhound racing {au_iso}"
-8. "Bulli greyhound racing {au_iso}"
-9. "Sandown greyhound racing {au_iso}"
-10. "Cannington greyhound racing {au_iso}"
+COMPREHENSIVE VENUE SEARCHES (search each major track):
+NSW TRACKS:
+5. "Gosford greyhound racing {au_iso}"
+6. "Bulli greyhound racing {au_iso}"
+7. "Richmond greyhound racing {au_iso}"
+8. "Dapto greyhound racing {au_iso}"
+9. "Wentworth Park greyhound racing {au_iso}"
 
-GENERAL INFORMATION SEARCHES:
-11. "greyhound racing Australia {au_iso} schedule"
-12. "Australian greyhound tracks racing today"
-13. "greyhound meetings {au_iso} NSW VIC QLD SA WA"
+VIC TRACKS:
+10. "Sandown greyhound racing {au_iso}"
+11. "Healesville greyhound racing {au_iso}"
+12. "Warragul greyhound racing {au_iso}"
+13. "Geelong greyhound racing {au_iso}"
+14. "Ballarat greyhound racing {au_iso}"
 
-# WHAT TO DO
-1) Use web search to find what Australian greyhound meetings are publicly listed for {au_long}.
-2) If you find meeting information, search for any available race card details.
-3) If you find specific race information, provide it with appropriate disclaimers.
-4) If detailed race cards are not accessible, provide general racing guidance.
+QLD TRACKS:
+15. "Albion Park greyhound racing {au_iso}"
+16. "Ipswich greyhound racing {au_iso}"
+17. "Townsville greyhound racing {au_iso}"
+18. "Capalaba greyhound racing {au_iso}"
 
-# REALISTIC OUTPUT APPROACH
+SA TRACKS:
+19. "Murray Bridge greyhound racing {au_iso}"
+20. "Angle Park greyhound racing {au_iso}"
 
-**If you find SPECIFIC race data through web search:**
+WA TRACKS:
+21. "Cannington greyhound racing {au_iso}"
+22. "Mandurah greyhound racing {au_iso}"
+
+# ANALYSIS REQUIREMENTS
+1) Search EVERY major greyhound venue for {au_long} meetings
+2) Find races across ALL states - NSW, VIC, QLD, SA, WA
+3) Select MAXIMUM ONE greyhound per race (never multiple from same race)
+4) Provide detailed unit staking recommendations (0.5 to 1.5 units max)
+5) Focus on finding 4-8 quality selections across different tracks
+
+# STAKING SYSTEM (MANDATORY)
+- **1.5 UNITS**: Premium selections with multiple strong factors
+- **1.0 UNITS**: Solid selections with good form/draw combination  
+- **0.5 UNITS**: Speculative plays or each-way chances
+- **NEVER exceed 1.5 units on any single selection**
+
+# OUTPUT FORMAT (MANDATORY STRUCTURE)
+
 🐕 **GREYHOUND SELECTIONS FOR {au_long}:**
 
-For each selection found:
+**🏆 PREMIUM SELECTIONS (1.5 Units)**
+
+🐕 **[DOG NAME]** | Race [X] | [TRACK NAME] 
+📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m
+💰 **Stake:** 1.5 Units | **Bet Type:** Win
+📊 **Key Factors:** [List 2-3 strongest factors]
+💡 **Analysis:** [Brief reasoning for premium confidence]
+
+**⭐ SOLID SELECTIONS (1.0 Units)**
+
 🐕 **[DOG NAME]** | Race [X] | [TRACK NAME]
-📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST / XX:XX AEST] | 📏 **Distance:** [XXX]m
-💰 **Current Market Info:** [Based on available data]
-💡 **Analysis:** [Based on publicly available information]
+📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m  
+💰 **Stake:** 1.0 Units | **Bet Type:** Win
+📊 **Key Factors:** [List key factors]
+💡 **Analysis:** [Brief reasoning]
 
-**If detailed race cards are NOT accessible through search:**
-🐕 **GREYHOUND RACING GUIDE FOR {au_long}:**
+**💡 SPECULATIVE PLAYS (0.5 Units)**
 
-📅 **Meetings Found:** [List any meetings you can identify]
-� **Search Results:** [Summarize what public information was available]
+🐕 **[DOG NAME]** | Race [X] | [TRACK NAME]
+📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m
+💰 **Stake:** 0.5 Units | **Bet Type:** Each-Way  
+📊 **Key Factors:** [List factors]
+💡 **Analysis:** [Brief reasoning]
 
-💡 **GENERAL RACING TIPS FOR {au_long}:**
-- Check TAB.com.au directly for current odds and race cards
-- Look for early market movers in the betting
-- Consider track conditions if available
-- Focus on experienced trainers and proven greyhounds
+� **MEETING COVERAGE SUMMARY:**
+- Total Meetings Analyzed: [X]
+- States Covered: [List states]
+- Total Selections: [X] across [X] different races
+- Total Recommended Outlay: [X.X] Units
 
-📝 **RECOMMENDED MANUAL CHECKS:**
-1. Visit TAB.com.au → Greyhounds → Today's Meetings
-2. Check TheDogs.com.au for detailed race cards
-3. Review track-specific websites for conditions
+🚨 **SELECTION RULES ENFORCED:**
+- ✅ Maximum 1 greyhound per race
+- ✅ Maximum 1.5 units per selection  
+- ✅ Diversified across multiple venues
+- ✅ Comprehensive venue scanning completed
 
-**IMPORTANT NOTES:**
-- {au_long} ({au_iso}) is TODAY'S date
-- Web search provides public snippets only
-- Many racing details require direct website access
-- Always verify information on official racing websites
-
-**If web search finds NO racing information:**
-Provide a comprehensive guide about where to manually check for {au_long} greyhound racing.
-
-REMEMBER: Be honest about search limitations. Provide what you CAN find, acknowledge what you cannot access.
-
-BEGIN ANALYSIS - USE WEB SEARCH AND BE REALISTIC ABOUT DATA AVAILABILITY."""
+CRITICAL: Never select multiple greyhounds from the same race. Always spread selections across different tracks and race numbers. Keep unit stakes between 0.5-1.5 maximum."""
 
     try:
         print("🔍 Starting comprehensive greyhound analysis...")
@@ -824,6 +941,11 @@ The analysis system did not receive a valid response from the AI service.
         
         print("✅ Analysis completed successfully!")
         
+        # Apply diversification filter to ensure no duplicate races
+        if final_answer:
+            print("🔍 Applying race diversification filter...")
+            final_answer = filter_diverse_selections(final_answer)
+        
         # Process response parts to separate thoughts from final answer
         # final_answer is already set above
         
@@ -839,10 +961,15 @@ The analysis system did not receive a valid response from the AI service.
         
         final_answer = '\n'.join(lines_to_keep)
         
-        # Add disclaimer
+        # Add enhanced disclaimer with unit guidance
         disclaimer = """
 
-⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly."""
+💰 **UNIT STAKING GUIDE:**
+- 1 Unit = Your standard betting amount (e.g., $10, $20, $50)
+- Never bet more than you can afford to lose
+- Consider your bankroll size when determining unit value
+
+⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly. Units are recommendations only - adjust to your bankroll."""
         
         full_response = final_answer + disclaimer
         
