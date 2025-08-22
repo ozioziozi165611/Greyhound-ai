@@ -1167,10 +1167,10 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
         async with aiohttp.ClientSession() as session:
             webhook = Webhook.from_url(WEBHOOK_URL, session=session)
             
-            # Add user and role mentions at the start if requested
+            # Add role mention at the start if requested
             message_content = ""
             if mention_user:
-                message_content = "<@1316242093496078346> <@&1308609618031423509>\n"
+                message_content = "<@&1316242093496078346>\n"
             
             # Create and send the embed
             embed = discord.Embed(
