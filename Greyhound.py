@@ -734,7 +734,7 @@ def validate_and_fix_selections(response_text: str) -> str:
             fixed_lines.append(line)
     
     # Check if no premium selections and add message if needed
-    has_premium = any('PREMIUM SELECTIONS' in line and '❌ No premium selections' not in line for line in fixed_lines)
+    has_premium = False
     premium_header_idx = None
     
     for i, line in enumerate(fixed_lines):
@@ -746,14 +746,19 @@ def validate_and_fix_selections(response_text: str) -> str:
         # Check if there are actual premium selections after the header
         has_actual_premium = False
         for i in range(premium_header_idx + 1, len(fixed_lines)):
-            if fixed_lines[i].strip().startswith('🐕'):
+            line = fixed_lines[i].strip()
+            if line.startswith('🐕'):
                 has_actual_premium = True
                 break
-            elif 'SOLID SELECTIONS' in fixed_lines[i] or 'SPECULATIVE PLAYS' in fixed_lines[i]:
+            elif 'SOLID SELECTIONS' in line or 'SPECULATIVE PLAYS' in line:
+                break
+            elif '❌ No premium selections' in line:
+                # Already has no premium message, don't add another
+                has_actual_premium = True  # Prevent adding duplicate
                 break
         
         if not has_actual_premium:
-            # Insert "no premium selections" message
+            # Insert "no premium selections" message only if not already present
             fixed_lines.insert(premium_header_idx + 1, '')
             fixed_lines.insert(premium_header_idx + 2, '❌ No premium selections found today - all races lack strong confidence factors')
             fixed_lines.insert(premium_header_idx + 3, '')
@@ -903,6 +908,9 @@ Assume the current date is {au_long} and the current time is {au_time} in the Au
 Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
 Do not reinterpret this as a future date.
 
+CRITICAL DATE VALIDATION: Only select greyhounds racing on {au_iso}. Verify each selection is actually racing on {au_long}. 
+If a greyhound is racing on a different date, DO NOT include it.
+
 # CRITICAL SELECTION RULES
 🚨 MAXIMUM ONE GREYHOUND PER RACE - Never select multiple dogs from the same race
 🚨 SCAN ALL MEETINGS - Cover as many different tracks and meetings as possible
@@ -969,7 +977,6 @@ WA TRACKS:
 🐕 **GREYHOUND SELECTIONS FOR {au_long}:**
 
 **🏆 PREMIUM SELECTIONS (1.5 Units)**
-[If no premium selections found, write: "❌ No premium selections found today - all races lack strong confidence factors"]
 
 🐕 **[DOG NAME]** | Race [X] | [TRACK NAME] 
 📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m
@@ -1160,10 +1167,10 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
         async with aiohttp.ClientSession() as session:
             webhook = Webhook.from_url(WEBHOOK_URL, session=session)
             
-            # Add user mention at the start if requested
+            # Add user and role mentions at the start if requested
             message_content = ""
             if mention_user:
-                message_content = "<@1316242093496078346>\n"
+                message_content = "<@1316242093496078346> <@&1308609618031423509>\n"
             
             # Create and send the embed
             embed = discord.Embed(
