@@ -1249,7 +1249,7 @@ async def main():
             print(f"Error in research mode: {str(e)}")
     elif mode == 'schedule':
         # Improved scheduler with precise timing and better reliability
-        print("Running in scheduler mode: will post at 07:00 and 19:00 AWST daily")
+        print("Running in scheduler mode: will post at 12:00 PM AWST daily")
         
         # Track what we've run with persistent file storage
         status_file = os.path.join(DATA_DIR, 'scheduler_status.json')
@@ -1259,9 +1259,9 @@ async def main():
                 if os.path.exists(status_file):
                     with open(status_file, 'r') as f:
                         return json.load(f)
-                return {'last_morning_run': None, 'last_evening_run': None}
+                return {'last_noon_run': None}
             except:
-                return {'last_morning_run': None, 'last_evening_run': None}
+                return {'last_noon_run': None}
         
         def save_scheduler_status(status):
             try:
@@ -1273,25 +1273,49 @@ async def main():
         scheduler_status = load_scheduler_status()
         print(f"Loaded scheduler status: {scheduler_status}")
         
-        # Send startup notification but DO NOT generate tips immediately
-        print("🚀 Bot started - sending startup notification...")
+        # Generate and send fresh tips on startup
+        print("🚀 Bot started - generating fresh tips...")
         try:
+            fresh_tips = await generate_greyhound_tips()
             startup_message = f"""🚀 **GREYHOUND BOT ONLINE**
 
-✅ **STATUS:** Bot successfully started and monitoring schedule
-⏰ **SCHEDULE:** Daily tips at 07:00 AWST only
+✅ **STATUS:** Bot successfully started with fresh analysis
+⏰ **SCHEDULE:** Daily tips at 12:00 PM AWST
 📅 **TODAY:** {datetime.now(AEST_TZ).strftime('%A, %B %d, %Y')}
 
 🔄 **NEXT SCHEDULED RUN:**
-- Morning Tips: 07:00 AWST (daily)
+- Noon Tips: 12:00 PM AWST (daily)
 - Coverage: All Australian greyhound meetings
 
-🛠️ **MODE:** Schedule monitoring active"""
+🛠️ **MODE:** Schedule monitoring active
+
+---
+
+{fresh_tips}"""
             
-            await send_webhook_message(startup_message, title="🚀 Greyhound Bot - Online", mention_user=False)
-            print("📢 Startup notification sent successfully")
+            await send_webhook_message(startup_message, title="🚀 Greyhound Bot - Online with Fresh Tips", mention_user=True)
+            print("� Startup notification with fresh tips sent successfully")
         except Exception as e:
-            print(f"❌ Failed to send startup notification: {e}")
+            print(f"❌ Failed to generate or send startup tips: {e}")
+            # Send basic startup notification if tips fail
+            try:
+                basic_startup = f"""🚀 **GREYHOUND BOT ONLINE**
+
+⚠️ **STATUS:** Bot started but failed to generate initial tips
+⏰ **SCHEDULE:** Daily tips at 12:00 PM AWST
+📅 **TODAY:** {datetime.now(AEST_TZ).strftime('%A, %B %d, %Y')}
+
+🔄 **NEXT SCHEDULED RUN:**
+- Noon Tips: 12:00 PM AWST (daily)
+- Coverage: All Australian greyhound meetings
+
+🛠️ **MODE:** Schedule monitoring active
+⚠️ **ERROR:** {str(e)[:200]}"""
+                
+                await send_webhook_message(basic_startup, title="🚀 Greyhound Bot - Online (Error)", mention_user=True)
+                print("📢 Basic startup notification sent")
+            except Exception as e2:
+                print(f"❌ Failed to send basic startup notification: {e2}")
         
         print("📅 Now entering precise scheduler mode...")
         
@@ -1305,33 +1329,33 @@ async def main():
                 current_hour = current_time.hour
                 current_minute = current_time.minute
                 
-                # PRECISE 7AM CHECK - Only run at exactly 7:00-7:05 AM
-                if (current_hour == 7 and 0 <= current_minute <= 5 and 
-                    scheduler_status.get('last_morning_run') != today_str):
+                # PRECISE 12PM CHECK - Only run at exactly 12:00-12:05 PM
+                if (current_hour == 12 and 0 <= current_minute <= 5 and 
+                    scheduler_status.get('last_noon_run') != today_str):
                     
-                    print(f"🌅 EXECUTING 7AM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
+                    print(f"🕐 EXECUTING 12PM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
                     try:
                         tips = await generate_greyhound_tips()
-                        await send_webhook_message(tips, title="🌅 Daily Greyhound Tips - 7AM Perth", mention_user=True)
+                        await send_webhook_message(tips, title="🕐 Daily Greyhound Tips - 12PM Perth", mention_user=True)
                         
                         # Update status to prevent double posting
-                        scheduler_status['last_morning_run'] = today_str
+                        scheduler_status['last_noon_run'] = today_str
                         save_scheduler_status(scheduler_status)
-                        print(f"✅ 7AM tips posted successfully for {today_str}")
+                        print(f"✅ 12PM tips posted successfully for {today_str}")
                         
                     except Exception as e:
-                        print(f"❌ Error in 7AM run: {str(e)}")
+                        print(f"❌ Error in 12PM run: {str(e)}")
                         # Send error notification
                         try:
-                            error_msg = f"⚠️ **7AM TIPS ERROR**\n\nFailed to generate tips at 7AM: {str(e)[:200]}\n\nWill retry tomorrow at 7AM."
+                            error_msg = f"⚠️ **12PM TIPS ERROR**\n\nFailed to generate tips at 12PM: {str(e)[:200]}\n\nWill retry tomorrow at 12PM."
                             await send_webhook_message(error_msg, title="⚠️ Greyhound Bot - Error", mention_user=True)
                         except:
                             pass
                 
                 # Debug output every hour only (reduced spam)
                 if current_minute == 0:
-                    next_run = "today" if scheduler_status.get('last_morning_run') != today_str else "tomorrow"
-                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next run: {next_run} at 07:00 AWST")
+                    next_run = "today" if scheduler_status.get('last_noon_run') != today_str else "tomorrow"
+                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next run: {next_run} at 12:00 PM AWST")
                 
                 await asyncio.sleep(60)  # Check every minute
                 
