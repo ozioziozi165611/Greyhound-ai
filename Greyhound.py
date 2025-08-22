@@ -701,6 +701,65 @@ def extract_race_info_greyhound(text: str) -> dict:
     
     return race_info
 
+def validate_and_fix_selections(response_text: str) -> str:
+    """Validate selections and fix common issues like incorrect staking"""
+    lines = response_text.split('\n')
+    fixed_lines = []
+    
+    current_section = None
+    
+    for line in lines:
+        # Detect section headers
+        if 'PREMIUM SELECTIONS (1.5 Units)' in line:
+            current_section = 'premium'
+            fixed_lines.append(line)
+        elif 'SOLID SELECTIONS (1.0 Units)' in line:
+            current_section = 'solid'
+            fixed_lines.append(line)
+        elif 'SPECULATIVE PLAYS (0.5 Units)' in line:
+            current_section = 'speculative'
+            fixed_lines.append(line)
+        elif line.strip().startswith('💰 **Stake:**'):
+            # Fix stake amounts based on current section
+            if current_section == 'premium':
+                fixed_lines.append('💰 **Stake:** 1.5 Units | **Bet Type:** Win')
+            elif current_section == 'solid':
+                fixed_lines.append('💰 **Stake:** 1.0 Units | **Bet Type:** Win')
+            elif current_section == 'speculative':
+                fixed_lines.append('💰 **Stake:** 0.5 Units | **Bet Type:** Each-Way')
+            else:
+                # Default to original line if section unclear
+                fixed_lines.append(line)
+        else:
+            fixed_lines.append(line)
+    
+    # Check if no premium selections and add message if needed
+    has_premium = any('PREMIUM SELECTIONS' in line and '❌ No premium selections' not in line for line in fixed_lines)
+    premium_header_idx = None
+    
+    for i, line in enumerate(fixed_lines):
+        if 'PREMIUM SELECTIONS (1.5 Units)' in line:
+            premium_header_idx = i
+            break
+    
+    if premium_header_idx is not None:
+        # Check if there are actual premium selections after the header
+        has_actual_premium = False
+        for i in range(premium_header_idx + 1, len(fixed_lines)):
+            if fixed_lines[i].strip().startswith('🐕'):
+                has_actual_premium = True
+                break
+            elif 'SOLID SELECTIONS' in fixed_lines[i] or 'SPECULATIVE PLAYS' in fixed_lines[i]:
+                break
+        
+        if not has_actual_premium:
+            # Insert "no premium selections" message
+            fixed_lines.insert(premium_header_idx + 1, '')
+            fixed_lines.insert(premium_header_idx + 2, '❌ No premium selections found today - all races lack strong confidence factors')
+            fixed_lines.insert(premium_header_idx + 3, '')
+    
+    return '\n'.join(fixed_lines)
+
 def filter_diverse_selections(response_text: str) -> str:
     """Filter greyhound selections to ensure diversification across different races."""
     lines = response_text.split('\n')
@@ -710,57 +769,107 @@ def filter_diverse_selections(response_text: str) -> str:
     in_selection = False
     
     for line in lines:
-        # Check if this is a dog selection line
-        if line.strip().startswith('🐕 **') and '**' in line:
+        # Check if this is a dog selection line with better pattern matching
+        if (line.strip().startswith('🐕 **') and 'Race' in line) or (line.strip().startswith('🐕') and 'Race' in line):
             # Process previous selection if any
             if current_selection:
-                race_info = extract_race_info_greyhound('\n'.join(current_selection))
+                selection_text = '\n'.join(current_selection)
+                
+                # Extract race info with multiple methods
                 race_key = None
                 
-                if race_info['track'] and race_info['race_number']:
-                    race_key = f"{race_info['track'].lower().strip()}_{race_info['race_number']}"
-                elif race_info['track']:
-                    race_key = f"{race_info['track'].lower().strip()}_unknown"
+                # Method 1: Look for "Race X | TRACK" or "TRACK | Race X" patterns
+                race_match = re.search(r'Race\s*(\d+).*?\|\s*([A-Za-z\s]+)', selection_text)
+                if not race_match:
+                    race_match = re.search(r'([A-Za-z\s]+)\s*\|\s*Race\s*(\d+)', selection_text)
+                    if race_match:
+                        track, race_num = race_match.groups()
+                        race_key = f"{track.strip().lower()}_{race_num}"
+                else:
+                    race_num, track = race_match.groups()
+                    race_key = f"{track.strip().lower()}_{race_num}"
+                
+                # Method 2: If no match, try simpler patterns
+                if not race_key:
+                    # Look for just "Race X" and try to find track in nearby text
+                    race_num_match = re.search(r'Race\s*(\d+)', selection_text)
+                    track_match = re.search(r'\|\s*([A-Za-z\s]+?)\s*(?:\n|$)', selection_text)
+                    
+                    if race_num_match and track_match:
+                        race_num = race_num_match.group(1)
+                        track = track_match.group(1).strip()
+                        race_key = f"{track.lower()}_{race_num}"
                 
                 # Only add if not a duplicate race
                 if not race_key or race_key not in used_races:
                     filtered_lines.extend(current_selection)
                     if race_key:
                         used_races.add(race_key)
-                        print(f"✅ Added selection from {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+                        # Extract readable names for display
+                        display_parts = race_key.split('_')
+                        track_name = display_parts[0].title()
+                        race_number = display_parts[1] if len(display_parts) > 1 else 'Unknown'
+                        print(f"✅ Added selection from {track_name} Race {race_number}")
                 else:
-                    print(f"🚨 FILTERED duplicate race: {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+                    # Extract readable names for display
+                    display_parts = race_key.split('_')
+                    track_name = display_parts[0].title()
+                    race_number = display_parts[1] if len(display_parts) > 1 else 'Unknown'
+                    print(f"🚨 FILTERED duplicate race: {track_name} Race {race_number}")
             
             # Start new selection
             current_selection = [line]
             in_selection = True
-        elif in_selection and (line.strip().startswith('🐕 **') or line.strip() == '' or line.strip().startswith('---')):
-            # End of current selection
+        elif in_selection and (line.strip().startswith('**') and ('SELECTIONS' in line or 'PLAYS' in line)):
+            # Hit a new section header, end current selection and add the header
             in_selection = False
-            if line.strip() == '' or line.strip().startswith('---'):
-                current_selection.append(line)
-        elif in_selection:
+            filtered_lines.append(line)
+        elif in_selection and line.strip() and not line.strip().startswith('🐕'):
+            # Continue current selection (description lines)
             current_selection.append(line)
-        else:
+        elif not in_selection:
             # Non-selection lines (headers, etc.)
-            if not in_selection:
+            filtered_lines.append(line)
+        elif line.strip() == '':
+            # Empty line - could be end of selection or just spacing
+            if in_selection:
+                current_selection.append(line)
+            else:
                 filtered_lines.append(line)
     
     # Process final selection
     if current_selection:
-        race_info = extract_race_info_greyhound('\n'.join(current_selection))
+        selection_text = '\n'.join(current_selection)
         race_key = None
         
-        if race_info['track'] and race_info['race_number']:
-            race_key = f"{race_info['track'].lower().strip()}_{race_info['race_number']}"
-        elif race_info['track']:
-            race_key = f"{race_info['track'].lower().strip()}_unknown"
+        # Extract race info with same methods as above
+        race_match = re.search(r'Race\s*(\d+).*?\|\s*([A-Za-z\s]+)', selection_text)
+        if not race_match:
+            race_match = re.search(r'([A-Za-z\s]+)\s*\|\s*Race\s*(\d+)', selection_text)
+            if race_match:
+                track, race_num = race_match.groups()
+                race_key = f"{track.strip().lower()}_{race_num}"
+        else:
+            race_num, track = race_match.groups()
+            race_key = f"{track.strip().lower()}_{race_num}"
+        
+        if not race_key:
+            race_num_match = re.search(r'Race\s*(\d+)', selection_text)
+            track_match = re.search(r'\|\s*([A-Za-z\s]+?)\s*(?:\n|$)', selection_text)
+            
+            if race_num_match and track_match:
+                race_num = race_num_match.group(1)
+                track = track_match.group(1).strip()
+                race_key = f"{track.lower()}_{race_num}"
         
         if not race_key or race_key not in used_races:
             filtered_lines.extend(current_selection)
             if race_key:
                 used_races.add(race_key)
-                print(f"✅ Added final selection from {race_info['track']} Race {race_info['race_number'] or 'Unknown'}")
+                display_parts = race_key.split('_')
+                track_name = display_parts[0].title()
+                race_number = display_parts[1] if len(display_parts) > 1 else 'Unknown'
+                print(f"✅ Added final selection from {track_name} Race {race_number}")
     
     print(f"📊 DIVERSIFICATION RESULT: {len(used_races)} selections from different races")
     return '\n'.join(filtered_lines)
@@ -799,6 +908,10 @@ Do not reinterpret this as a future date.
 🚨 SCAN ALL MEETINGS - Cover as many different tracks and meetings as possible
 🚨 DIVERSIFICATION MANDATORY - Spread selections across different venues and race numbers
 🚨 MAXIMUM 1.5 UNITS STAKE - Never recommend stakes above 1.5 units per selection
+🚨 CORRECT STAKING - Premium=1.5 units, Solid=1.0 units, Speculative=0.5 units ONLY
+
+CRITICAL: If you find multiple good dogs in the same race, pick ONLY the best one. 
+NEVER put two dogs from Race 6 Richmond, or Race 9 Mandurah, etc.
 
 # WEB SEARCH INSTRUCTIONS & COMPREHENSIVE COVERAGE
 You have access to web search tools. Search ALL major Australian greyhound venues:
@@ -856,6 +969,7 @@ WA TRACKS:
 🐕 **GREYHOUND SELECTIONS FOR {au_long}:**
 
 **🏆 PREMIUM SELECTIONS (1.5 Units)**
+[If no premium selections found, write: "❌ No premium selections found today - all races lack strong confidence factors"]
 
 🐕 **[DOG NAME]** | Race [X] | [TRACK NAME] 
 📦 **Box:** [X] | ⏰ **Time:** [XX:XX AWST] | 📏 **Distance:** [XXX]m
@@ -890,6 +1004,10 @@ WA TRACKS:
 - ✅ Maximum 1.5 units per selection  
 - ✅ Diversified across multiple venues
 - ✅ Comprehensive venue scanning completed
+- ✅ Correct stake amounts: Premium=1.5u, Solid=1.0u, Speculative=0.5u
+
+FINAL CHECK: Before submitting, verify no race number appears twice in your selections.
+Example: If you have Richmond Race 6, you cannot have another Richmond Race 6 selection.
 
 CRITICAL: Never select multiple greyhounds from the same race. Always spread selections across different tracks and race numbers. Keep unit stakes between 0.5-1.5 maximum."""
 
@@ -945,6 +1063,9 @@ The analysis system did not receive a valid response from the AI service.
         if final_answer:
             print("🔍 Applying race diversification filter...")
             final_answer = filter_diverse_selections(final_answer)
+            
+            # Additional validation to catch any remaining issues
+            final_answer = validate_and_fix_selections(final_answer)
         
         # Process response parts to separate thoughts from final answer
         # final_answer is already set above
