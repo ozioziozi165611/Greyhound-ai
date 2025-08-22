@@ -1263,21 +1263,7 @@ async def main():
         print("🚀 Bot started - generating fresh tips...")
         try:
             fresh_tips = await generate_greyhound_tips()
-            startup_message = f"""🚀 **GREYHOUND BOT ONLINE**
-
-✅ **STATUS:** Bot successfully started with fresh analysis
-⏰ **SCHEDULE:** Daily tips at 12:00 PM AWST
-📅 **TODAY:** {datetime.now(AEST_TZ).strftime('%A, %B %d, %Y')}
-
-🔄 **NEXT SCHEDULED RUN:**
-- Noon Tips: 12:00 PM AWST (daily)
-- Coverage: All Australian greyhound meetings
-
-🛠️ **MODE:** Schedule monitoring active
-
----
-
-{fresh_tips}"""
+            startup_message = f"""{fresh_tips}"""
             
             await send_webhook_message(startup_message, title="🚀 Greyhound Bot - Online with Fresh Tips", mention_user=True)
             print("� Startup notification with fresh tips sent successfully")
@@ -1285,18 +1271,11 @@ async def main():
             print(f"❌ Failed to generate or send startup tips: {e}")
             # Send basic startup notification if tips fail
             try:
-                basic_startup = f"""🚀 **GREYHOUND BOT ONLINE**
+                basic_startup = f"""⚠️ **ERROR GENERATING TIPS**
 
-⚠️ **STATUS:** Bot started but failed to generate initial tips
-⏰ **SCHEDULE:** Daily tips at 12:00 PM AWST
-📅 **TODAY:** {datetime.now(AEST_TZ).strftime('%A, %B %d, %Y')}
+Failed to generate tips: {str(e)[:200]}
 
-🔄 **NEXT SCHEDULED RUN:**
-- Noon Tips: 12:00 PM AWST (daily)
-- Coverage: All Australian greyhound meetings
-
-🛠️ **MODE:** Schedule monitoring active
-⚠️ **ERROR:** {str(e)[:200]}"""
+⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly."""
                 
                 await send_webhook_message(basic_startup, title="🚀 Greyhound Bot - Online (Error)", mention_user=True)
                 print("📢 Basic startup notification sent")
