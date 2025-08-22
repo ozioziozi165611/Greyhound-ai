@@ -1000,22 +1000,6 @@ WA TRACKS:
 📊 **Key Factors:** [List factors]
 💡 **Analysis:** [Brief reasoning]
 
-� **MEETING COVERAGE SUMMARY:**
-- Total Meetings Analyzed: [X]
-- States Covered: [List states]
-- Total Selections: [X] across [X] different races
-- Total Recommended Outlay: [X.X] Units
-
-🚨 **SELECTION RULES ENFORCED:**
-- ✅ Maximum 1 greyhound per race
-- ✅ Maximum 1.5 units per selection  
-- ✅ Diversified across multiple venues
-- ✅ Comprehensive venue scanning completed
-- ✅ Correct stake amounts: Premium=1.5u, Solid=1.0u, Speculative=0.5u
-
-FINAL CHECK: Before submitting, verify no race number appears twice in your selections.
-Example: If you have Richmond Race 6, you cannot have another Richmond Race 6 selection.
-
 CRITICAL: Never select multiple greyhounds from the same race. Always spread selections across different tracks and race numbers. Keep unit stakes between 0.5-1.5 maximum."""
 
     try:
@@ -1089,15 +1073,10 @@ The analysis system did not receive a valid response from the AI service.
         
         final_answer = '\n'.join(lines_to_keep)
         
-        # Add enhanced disclaimer with unit guidance
+        # Add simple disclaimer
         disclaimer = """
 
-💰 **UNIT STAKING GUIDE:**
-- 1 Unit = Your standard betting amount (e.g., $10, $20, $50)
-- Never bet more than you can afford to lose
-- Consider your bankroll size when determining unit value
-
-⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly. Units are recommendations only - adjust to your bankroll."""
+⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly."""
         
         full_response = final_answer + disclaimer
         
