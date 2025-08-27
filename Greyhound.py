@@ -1176,9 +1176,124 @@ async def send_webhook_message(content, title="🐕 Greyhound Racing Tips - Dail
                 
     except Exception as e:
         print(f"Error sending webhook: {str(e)}")
+
+async def send_tips_as_separate_messages(content, title="🐕 Greyhound Racing Tips - Daily Analysis", mention_user=True):
+    """Send tips as separate messages for each selection so people can react to individual tips"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            webhook = Webhook.from_url(WEBHOOK_URL, session=session)
+            
+            # Add role mention at the start if requested
+            message_content = ""
+            if mention_user:
+                message_content = "<@&1316242093496078346>\n"
+            
+            lines = content.split('\n')
+            
+            # First, send the header/introduction part
+            header_lines = []
+            tip_sections = []
+            current_tip = []
+            
+            # Parse the content to separate header from tips
+            in_tips_section = False
+            collecting_tip = False
+            
+            for line in lines:
+                line_stripped = line.strip()
+                
+                # Detect start of tips section
+                if ('🐕 **' in line and '**' in line) or (line_stripped.startswith('🏁') and 'Race' in line):
+                    in_tips_section = True
+                    collecting_tip = True
+                    
+                    # If we have a previous tip, save it
+                    if current_tip:
+                        tip_sections.append('\n'.join(current_tip))
+                        current_tip = []
+                    
+                    current_tip.append(line)
+                    continue
+                
+                if in_tips_section and collecting_tip:
+                    # Continue collecting tip until we hit another tip or disclaimer
+                    if ('🐕 **' in line and '**' in line) or (line_stripped.startswith('🏁') and 'Race' in line):
+                        # Start of new tip
+                        if current_tip:
+                            tip_sections.append('\n'.join(current_tip))
+                            current_tip = []
+                        current_tip.append(line)
+                    elif line_stripped.startswith('⚠️ **DISCLAIMER'):
+                        # End of tips, start of disclaimer
+                        if current_tip:
+                            tip_sections.append('\n'.join(current_tip))
+                            current_tip = []
+                        collecting_tip = False
+                        current_tip.append(line)  # Start collecting disclaimer
+                    else:
+                        # Regular line, add to current section
+                        current_tip.append(line)
+                else:
+                    # Before tips section or after tips section
+                    if not in_tips_section:
+                        header_lines.append(line)
+                    else:
+                        # This is likely disclaimer or footer
+                        current_tip.append(line)
+            
+            # Don't forget the last section
+            if current_tip:
+                if collecting_tip:
+                    tip_sections.append('\n'.join(current_tip))
+                else:
+                    # This is likely disclaimer/footer, we can append to last tip or send separately
+                    disclaimer_content = '\n'.join(current_tip).strip()
+                    if len(disclaimer_content) > 20:  # Only if substantial content
+                        tip_sections.append(disclaimer_content)
+            
+            # Send header if we have one
+            if header_lines:
+                header_content = '\n'.join(header_lines).strip()
+                if header_content:
+                    embed = discord.Embed(
+                        title=title,
+                        description=header_content[:4096],
+                        color=0x00ff00
+                    )
+                    embed.set_footer(text=f"Generated on {datetime.now(PERTH_TZ).strftime('%B %d, %Y at %H:%M AWST')}")
+                    await webhook.send(content=message_content, embed=embed)
+                    message_content = ""  # Only mention role in first message
+                    await asyncio.sleep(1)
+            
+            # Send each tip as a separate message
+            for i, tip_content in enumerate(tip_sections):
+                tip_content = tip_content.strip()
+                if not tip_content:
+                    continue
+                
+                # Determine if this is a tip or disclaimer
+                is_disclaimer = '⚠️ **DISCLAIMER' in tip_content
+                
+                embed = discord.Embed(
+                    description=tip_content[:4096],
+                    color=0xff9900 if is_disclaimer else 0x00ff00  # Orange for disclaimer, green for tips
+                )
+                
+                # If this is the first message and we didn't send a header
+                if i == 0 and not header_lines:
+                    embed.title = title
+                    embed.set_footer(text=f"Generated on {datetime.now(PERTH_TZ).strftime('%B %d, %Y at %H:%M AWST')}")
+                    await webhook.send(content=message_content, embed=embed)
+                else:
+                    await webhook.send(embed=embed)
+                
+                # Longer delay between tips for people to react, shorter for disclaimer
+                await asyncio.sleep(1 if is_disclaimer else 3)
                 
     except Exception as e:
-        print(f"Error sending webhook: {str(e)}")
+        print(f"Error sending tips as separate messages: {str(e)}")
+        # Fallback to original method
+        await send_webhook_message(content, title, mention_user)
 
 async def main():
     print("🚀 Starting Greyhound Racing Tips Bot - Railway Ready!")
@@ -1265,7 +1380,7 @@ async def main():
             fresh_tips = await generate_greyhound_tips()
             startup_message = f"""{fresh_tips}"""
             
-            await send_webhook_message(startup_message, title="🚀 Greyhound Bot - Online with Fresh Tips", mention_user=True)
+            await send_tips_as_separate_messages(startup_message, title="🚀 Greyhound Bot - Online with Fresh Tips", mention_user=True)
             print("� Startup notification with fresh tips sent successfully")
         except Exception as e:
             print(f"❌ Failed to generate or send startup tips: {e}")
@@ -1301,7 +1416,7 @@ Failed to generate tips: {str(e)[:200]}
                     print(f"🕐 EXECUTING 12PM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
                     try:
                         tips = await generate_greyhound_tips()
-                        await send_webhook_message(tips, title="🕐 Daily Greyhound Tips - 12PM Perth", mention_user=True)
+                        await send_tips_as_separate_messages(tips, title="🕐 Daily Greyhound Tips - 12PM Perth", mention_user=True)
                         
                         # Update status to prevent double posting
                         scheduler_status['last_noon_run'] = today_str
@@ -1334,7 +1449,7 @@ Failed to generate tips: {str(e)[:200]}
             print("Generating greyhound tips (one-off)...")
             tips = await generate_greyhound_tips()
             print("Sending greyhound tips to Discord...")
-            await send_webhook_message(tips, title="🐕 Greyhound Tips - Manual Run", mention_user=True)
+            await send_tips_as_separate_messages(tips, title="🐕 Greyhound Tips - Manual Run", mention_user=True)
             print("Done.")
         except Exception as e:
             print(f"Error: {str(e)}")
