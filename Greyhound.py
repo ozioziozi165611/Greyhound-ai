@@ -46,7 +46,7 @@ RAILWAY DEPLOYMENT INSTRUCTIONS:
     print(f"📅 Bot will use Australian date for all analysis")
     print("=" * 60)
 
-# Railway-ready 24/7 greyhound tips bot with automatic 7AM/7PM Perth time
+# Railway-ready 24/7 greyhound tips bot with automatic 12PM Sydney time
 """
 
 import discord
@@ -1350,7 +1350,10 @@ async def main():
             print(f"Error in research mode: {str(e)}")
     elif mode == 'schedule':
         # Improved scheduler with precise timing and better reliability
-        print("Running in scheduler mode: will post at 12:00 PM AWST daily")
+        # CHANGES: No startup tips generation, only scheduled 12 PM Sydney time tips
+        print("Running in scheduler mode: will post at 12:00 PM Sydney time (AEST/AEDT) daily")
+        print("🚫 NO startup tips will be generated - only scheduled 12 PM tips")
+        print("🎯 Tips will only be sent once per day at exactly 12 PM Sydney time")
         
         # Track what we've run with persistent file storage
         status_file = os.path.join(DATA_DIR, 'scheduler_status.json')
@@ -1360,82 +1363,109 @@ async def main():
                 if os.path.exists(status_file):
                     with open(status_file, 'r') as f:
                         return json.load(f)
-                return {'last_noon_run': None}
+                return {'last_noon_run': None, 'last_run_timestamp': None}
             except:
-                return {'last_noon_run': None}
+                return {'last_noon_run': None, 'last_run_timestamp': None}
         
         def save_scheduler_status(status):
             try:
                 with open(status_file, 'w') as f:
-                    json.dump(status, f)
+                    json.dump(status, f, indent=2)
             except Exception as e:
                 print(f"Error saving scheduler status: {e}")
         
         scheduler_status = load_scheduler_status()
         print(f"Loaded scheduler status: {scheduler_status}")
         
-        # Generate and send fresh tips on startup
-        print("🚀 Bot started - generating fresh tips...")
+        # Send only a simple startup notification (NO TIPS)
+        print("🤖 Bot started - NO fresh tips on startup")
         try:
-            fresh_tips = await generate_greyhound_tips()
-            startup_message = f"""{fresh_tips}"""
+            startup_time = datetime.now(AEST_TZ).strftime('%H:%M AEST on %B %d, %Y')
+            simple_startup = f"""🤖 **Greyhound Bot Online**
+
+📅 **Status:** Scheduler active
+⏰ **Started:** {startup_time}
+🎯 **Next Action:** Daily tips at 12:00 PM Sydney time
+
+The bot will automatically post greyhound tips at 12 PM Sydney time each day.
+No tips are generated on startup - only at the scheduled time."""
             
-            await send_tips_as_separate_messages(startup_message, title="🚀 Greyhound Bot - Online with Fresh Tips", mention_user=True)
-            print("� Startup notification with fresh tips sent successfully")
+            await send_webhook_message(simple_startup, title="🤖 Greyhound Bot - Scheduler Active", mention_user=False)
+            print("📢 Simple startup notification sent (no tips)")
         except Exception as e:
-            print(f"❌ Failed to generate or send startup tips: {e}")
-            # Send basic startup notification if tips fail
-            try:
-                basic_startup = f"""⚠️ **ERROR GENERATING TIPS**
-
-Failed to generate tips: {str(e)[:200]}
-
-⚠️ **DISCLAIMER**: Check current odds with your bookmaker before placing bets. Gamble responsibly."""
-                
-                await send_webhook_message(basic_startup, title="🚀 Greyhound Bot - Online (Error)", mention_user=True)
-                print("📢 Basic startup notification sent")
-            except Exception as e2:
-                print(f"❌ Failed to send basic startup notification: {e2}")
+            print(f"⚠️ Failed to send startup notification: {e}")
         
         print("📅 Now entering precise scheduler mode...")
         
         try:
             while True:
-                # Use Australian date for scheduler timing
-                now_australian = datetime.now(AEST_TZ)
-                now_perth = now_australian.astimezone(PERTH_TZ)
-                today_str = now_australian.strftime('%Y-%m-%d')  # Australian date
-                current_time = now_perth.time()
+                # Use Sydney timezone for all scheduler timing
+                now_sydney = datetime.now(AEST_TZ)
+                today_str = now_sydney.strftime('%Y-%m-%d')  # Sydney date
+                current_time = now_sydney.time()
                 current_hour = current_time.hour
                 current_minute = current_time.minute
+                current_timestamp = now_sydney.isoformat()
                 
-                # PRECISE 12PM CHECK - Only run at exactly 12:00-12:05 PM
-                if (current_hour == 12 and 0 <= current_minute <= 5 and 
-                    scheduler_status.get('last_noon_run') != today_str):
+                # PRECISE 12PM CHECK - Only run at exactly 12:00-12:02 PM (narrower window)
+                # AND ensure we haven't already run today
+                is_noon_time = (current_hour == 12 and 0 <= current_minute <= 2)
+                has_not_run_today = scheduler_status.get('last_noon_run') != today_str
+                
+                if is_noon_time and has_not_run_today:
+                    print(f"🎯 12 PM TRIGGER ACTIVATED - {now_sydney.strftime('%H:%M:%S AEST on %B %d, %Y')}")
+                    print(f"📅 Generating tips for TODAY: {today_str}")
                     
-                    print(f"🕐 EXECUTING 12PM greyhound tips run at {now_perth.strftime('%H:%M AWST')}...")
                     try:
+                        # Generate tips for TODAY only
                         tips = await generate_greyhound_tips()
-                        await send_tips_as_separate_messages(tips, title="🕐 Daily Greyhound Tips - 12PM Perth", mention_user=True)
                         
-                        # Update status to prevent double posting
+                        # Send the tips
+                        await send_tips_as_separate_messages(
+                            tips, 
+                            title=f"� Daily Greyhound Tips - {now_sydney.strftime('%B %d, %Y')}", 
+                            mention_user=True
+                        )
+                        
+                        # Mark as completed for today with timestamp
                         scheduler_status['last_noon_run'] = today_str
+                        scheduler_status['last_run_timestamp'] = current_timestamp
                         save_scheduler_status(scheduler_status)
-                        print(f"✅ 12PM tips posted successfully for {today_str}")
+                        
+                        print(f"✅ Daily 12 PM tips sent successfully for {today_str}")
+                        print(f"📊 Next tips will be sent tomorrow at 12 PM Sydney time")
                         
                     except Exception as e:
-                        print(f"❌ Error in 12PM run: {str(e)}")
-                        # Send error notification
+                        print(f"❌ Error during 12 PM tips generation: {str(e)}")
+                        
+                        # Send error notification but don't mark as completed (so it can retry)
                         try:
-                            error_msg = f"⚠️ **12PM TIPS ERROR**\n\nFailed to generate tips at 12PM: {str(e)[:200]}\n\nWill retry tomorrow at 12PM."
-                            await send_webhook_message(error_msg, title="⚠️ Greyhound Bot - Error", mention_user=True)
+                            error_msg = f"""⚠️ **Error Generating Daily Tips**
+
+**Time:** {now_sydney.strftime('%H:%M AEST on %B %d, %Y')}
+**Error:** {str(e)[:300]}
+
+The bot will attempt to generate tips again tomorrow at 12 PM."""
+                            
+                            await send_webhook_message(error_msg, title="⚠️ Greyhound Bot - Error", mention_user=False)
                         except:
-                            pass
+                            pass  # Don't let error notification failure break the scheduler
                 
-                # Debug output every hour only (reduced spam)
-                if current_minute == 0:
-                    next_run = "today" if scheduler_status.get('last_noon_run') != today_str else "tomorrow"
-                    print(f"⏰ {now_perth.strftime('%H:%M AWST')} - Next run: {next_run} at 12:00 PM AWST")
+                # Debug output every 30 minutes only (reduced spam)
+                if current_minute in [0, 30]:
+                    # Calculate time until next noon
+                    next_noon = now_sydney.replace(hour=12, minute=0, second=0, microsecond=0)
+                    if current_hour >= 12:
+                        next_noon += timedelta(days=1)
+                    
+                    time_until_noon = next_noon - now_sydney
+                    hours_until = int(time_until_noon.total_seconds() // 3600)
+                    minutes_until = int((time_until_noon.total_seconds() % 3600) // 60)
+                    
+                    last_run = scheduler_status.get('last_noon_run', 'Never')
+                    
+                    print(f"🕐 {now_sydney.strftime('%H:%M AEST')} - Next 12 PM run in {hours_until}h {minutes_until}m")
+                    print(f"📊 Last run: {last_run}")
                 
                 await asyncio.sleep(60)  # Check every minute
                 
