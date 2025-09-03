@@ -733,13 +733,15 @@ def validate_and_fix_selections(response_text: str) -> str:
         else:
             fixed_lines.append(line)
     
-    # Check if no premium selections and add message if needed
-    has_premium = False
+    # Check if no premium selections and remove the entire section if empty
     premium_header_idx = None
+    solid_header_idx = None
     
     for i, line in enumerate(fixed_lines):
         if 'PREMIUM SELECTIONS (1.5 Units)' in line:
             premium_header_idx = i
+        elif 'SOLID SELECTIONS (1.0 Units)' in line:
+            solid_header_idx = i
             break
     
     if premium_header_idx is not None:
@@ -753,15 +755,17 @@ def validate_and_fix_selections(response_text: str) -> str:
             elif 'SOLID SELECTIONS' in line or 'SPECULATIVE PLAYS' in line:
                 break
             elif '❌ No premium selections' in line:
-                # Already has no premium message, don't add another
-                has_actual_premium = True  # Prevent adding duplicate
+                # Skip lines with "no premium selections" message as we'll remove the section
                 break
         
         if not has_actual_premium:
-            # Insert "no premium selections" message only if not already present
-            fixed_lines.insert(premium_header_idx + 1, '')
-            fixed_lines.insert(premium_header_idx + 2, '❌ No premium selections found today - all races lack strong confidence factors')
-            fixed_lines.insert(premium_header_idx + 3, '')
+            # Remove the entire premium selections section
+            if solid_header_idx is not None:
+                # Remove from premium header to solid header (exclusive)
+                del fixed_lines[premium_header_idx:solid_header_idx]
+            else:
+                # No solid selections section found, remove from premium header to end
+                del fixed_lines[premium_header_idx:]
     
     return '\n'.join(fixed_lines)
 
