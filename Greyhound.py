@@ -93,8 +93,10 @@ if GEMINI_API_KEY and not GEMINI_API_KEY.startswith('AIza'):
     print(f"⚠️ WARNING: API key doesn't start with 'AIza' - this might be incorrect")
 
 # Australian timezones - MUST be defined before any functions that use them
+# Primary anchor timezone for all date calculations. Override with env AU_TZ if needed (e.g., Australia/Perth)
+AU_TZ_NAME = os.environ.get('AU_TZ', 'Australia/Sydney')
+AU_TZ = pytz.timezone(AU_TZ_NAME)
 PERTH_TZ = pytz.timezone('Australia/Perth')
-AEST_TZ = pytz.timezone('Australia/Sydney')  # AEST timezone for getting correct Australian date
 
 # Data directory - Railway-friendly (will use /app/data in Railway)
 if os.path.exists('/app'):
@@ -108,12 +110,12 @@ else:
 DAILY_PREDICTIONS_FILE = os.path.join(DATA_DIR, 'daily_greyhound_predictions.json')
 
 def default_predictions_for_today():
-    # Use Australian date, not American system date
-    australian_now = datetime.now(AEST_TZ)
+    """Default structure for today's predictions using the anchor AU timezone."""
+    au_now = datetime.now(AU_TZ)
     return {
-        'date': australian_now.strftime('%Y-%m-%d'),
+        'date': au_now.strftime('%Y-%m-%d'),
         'predictions': [],
-        'generated_at': australian_now.astimezone(PERTH_TZ).strftime('%H:%M AWST')
+        'generated_at': au_now.strftime('%H:%M %Z')
     }
 
 def ensure_data_dir_and_files():
@@ -140,27 +142,22 @@ def ensure_data_dir_and_files():
         print(f"📁 Fallback data directory: {DATA_DIR}")
 
 def get_effective_date():
-    """Get the effective date for analysis - uses Australian date, not American system date"""
+    """Get the effective datetime anchored to Australia (AU_TZ), regardless of server location."""
     if OVERRIDE_DATE:
         try:
-            # Parse override date and apply Perth timezone
+            # Parse override date and localize at noon in AU_TZ
             override_dt = datetime.strptime(OVERRIDE_DATE, '%Y-%m-%d')
-            # Create a timezone-aware datetime at noon Perth time
-            effective_dt = PERTH_TZ.localize(override_dt.replace(hour=12))
+            effective_dt = AU_TZ.localize(override_dt.replace(hour=12, minute=0, second=0, microsecond=0))
             print(f"🔧 Using OVERRIDE_DATE: {OVERRIDE_DATE} -> {effective_dt.strftime('%B %d, %Y (%A)')}")
             return effective_dt
         except ValueError as e:
             print(f"⚠️ Invalid OVERRIDE_DATE format '{OVERRIDE_DATE}': {e}")
             print("Using current Australian date instead")
-    
-    # Use Australian Eastern time to get the correct Australian date
-    # This fixes the issue with American system dates
-    australian_now = datetime.now(AEST_TZ)
-    print(f"🇦🇺 Using Australian date: {australian_now.strftime('%B %d, %Y (%A)')} AEST")
-    
-    # Convert to Perth timezone for analysis (maintain Perth time for the bot)
-    perth_equivalent = australian_now.astimezone(PERTH_TZ)
-    return perth_equivalent
+
+    # Use AU_TZ to get the correct Australian date regardless of server TZ
+    au_now = datetime.now(AU_TZ)
+    print(f"🇦🇺 Using Australian date: {au_now.strftime('%B %d, %Y (%A)')} {au_now.strftime('%Z')}")
+    return au_now
 
 # Initialize Gemini client with proper SDK
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -266,7 +263,7 @@ def load_daily_predictions():
             with open(DAILY_PREDICTIONS_FILE, 'r') as f:
                 data = json.load(f)
             # Ensure file is for today (Australian date)
-            australian_now = datetime.now(AEST_TZ)
+            australian_now = datetime.now(AU_TZ)
             today_str = australian_now.strftime('%Y-%m-%d')
             if data.get('date') == today_str:
                 return data
@@ -300,7 +297,7 @@ async def test_web_search_capability():
         print("⚠️ Note: Search grounding provides web snippets, not guaranteed access to all racing data")
         
         # Get current Australian date for test
-        au_now = datetime.now(pytz.timezone('Australia/Sydney'))
+        au_now = datetime.now(AU_TZ)
         au_iso = au_now.strftime("%Y-%m-%d")
         
         # Try search grounding first
@@ -884,20 +881,17 @@ def filter_diverse_selections(response_text: str) -> str:
     return '\n'.join(filtered_lines)
 
 async def analyze_greyhound_racing_day(current_time_perth):
-    """Analyze TODAY only (Perth date) with comprehensive greyhound analysis using explicit AU date anchoring"""
+    """Analyze TODAY only (AU date) with comprehensive greyhound analysis using explicit AU date anchoring"""
     
     print(f"🔍 Starting comprehensive greyhound analysis for TODAY...")
     
-    # Always anchor to Australia/Sydney date for "today"
-    AEST_TZ = pytz.timezone('Australia/Sydney')
-    
-    au_now = datetime.now(AEST_TZ)
-    au_iso = au_now.strftime("%Y-%m-%d")                  # 2025-08-17
-    au_long = au_now.strftime("%A, %d %B %Y")             # Sunday, 17 August 2025
-    au_time = au_now.strftime("%H:%M AEST")               # 09:12 AEST
+    # Always anchor to AU_TZ date for "today"
+    au_now = datetime.now(AU_TZ)
+    au_iso = au_now.strftime("%Y-%m-%d")
+    au_long = au_now.strftime("%A, %d %B %Y")
+    au_time = au_now.strftime("%H:%M %Z")
     
     # Convert to Perth time for display
-    PERTH_TZ = pytz.timezone('Australia/Perth')
     au_now_perth = au_now.astimezone(PERTH_TZ)
     perth_time = au_now_perth.strftime("%H:%M AWST")
     
@@ -908,7 +902,7 @@ async def analyze_greyhound_racing_day(current_time_perth):
     main_prompt = f"""You are an expert greyhound racing analyst with access to real-time web search.
 
 # DATE ANCHOR (DO NOT CHANGE)
-Assume the current date is {au_long} and the current time is {au_time} in the Australia/Sydney time zone (AEST/AEDT as appropriate). 
+Assume the current date is {au_long} and the current time is {au_time} in the {AU_TZ_NAME} time zone. 
 Treat {au_long} ({au_iso}) as "today" for all searches and decisions, even if your system clock or any website shows a different date. 
 Do not reinterpret this as a future date.
 
@@ -1304,20 +1298,21 @@ async def main():
     print("=" * 60)
     
     # Debug current dates and configuration
-    perth_now = get_effective_date()  # Use effective date
+    perth_now = get_effective_date()  # Use effective AU date (may be Sydney or AU_TZ override)
     system_now = datetime.now()  # American system time
     utc_now = datetime.utcnow()
-    australian_now = datetime.now(AEST_TZ)  # Correct Australian time
+    australian_now = datetime.now(AU_TZ)  # Correct Australian time
+    perth_display = australian_now.astimezone(PERTH_TZ)
     
     print(f"🕐 System time (American): {system_now.strftime('%Y-%m-%d %H:%M')}")
     print(f"🌍 UTC time: {utc_now.strftime('%Y-%m-%d %H:%M UTC')}")
-    print(f"🇦🇺 Australian time (AEST): {australian_now.strftime('%Y-%m-%d %H:%M AEST')}")
-    print(f"🇦🇺 Perth time: {perth_now.strftime('%Y-%m-%d %H:%M AWST')}")
-    print(f"📅 Target date: {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
+    print(f"🇦🇺 Australian time ({australian_now.strftime('%Z')}): {australian_now.strftime('%Y-%m-%d %H:%M %Z')}")
+    print(f"🇦🇺 Perth time: {perth_display.strftime('%Y-%m-%d %H:%M AWST')}")
+    print(f"📅 Target date (AU): {perth_now.strftime('%B %d, %Y')} ({perth_now.strftime('%Y-%m-%d')})")
     if OVERRIDE_DATE:
         print(f"� OVERRIDE_DATE set to: {OVERRIDE_DATE}")
     else:
-        print(f"📅 Using Australian date (not American system date): {australian_now.strftime('%B %d, %Y')}")
+        print(f"📅 Using Australian date (not American system date): {australian_now.strftime('%B %d, %Y')} {australian_now.strftime('%Z')}")
     print(f"📁 Data directory: {DATA_DIR}")
     print("=" * 60)
     
@@ -1355,9 +1350,9 @@ async def main():
     elif mode == 'schedule':
         # Improved scheduler with precise timing and better reliability
         # CHANGES: No startup tips generation, only scheduled 12 PM Sydney time tips
-        print("Running in scheduler mode: will post at 12:00 PM Sydney time (AEST/AEDT) daily")
+        print(f"Running in scheduler mode: will post at 12:00 PM {AU_TZ_NAME} time daily")
         print("🚫 NO startup tips will be generated - only scheduled 12 PM tips")
-        print("🎯 Tips will only be sent once per day at exactly 12 PM Sydney time")
+        print(f"🎯 Tips will only be sent once per day at exactly 12 PM {AU_TZ_NAME}")
         
         # Track what we've run with persistent file storage
         status_file = os.path.join(DATA_DIR, 'scheduler_status.json')
@@ -1384,14 +1379,14 @@ async def main():
         # Send only a simple startup notification (NO TIPS)
         print("🤖 Bot started - NO fresh tips on startup")
         try:
-            startup_time = datetime.now(AEST_TZ).strftime('%H:%M AEST on %B %d, %Y')
+            startup_time = datetime.now(AU_TZ).strftime('%H:%M %Z on %B %d, %Y')
             simple_startup = f"""🤖 **Greyhound Bot Online**
 
 📅 **Status:** Scheduler active
 ⏰ **Started:** {startup_time}
-🎯 **Next Action:** Daily tips at 12:00 PM Sydney time
+🎯 **Next Action:** Daily tips at 12:00 PM {AU_TZ_NAME}
 
-The bot will automatically post greyhound tips at 12 PM Sydney time each day.
+The bot will automatically post greyhound tips at 12 PM {AU_TZ_NAME} each day.
 No tips are generated on startup - only at the scheduled time."""
             
             await send_webhook_message(simple_startup, title="🤖 Greyhound Bot - Scheduler Active", mention_user=False)
@@ -1403,13 +1398,13 @@ No tips are generated on startup - only at the scheduled time."""
         
         try:
             while True:
-                # Use Sydney timezone for all scheduler timing
-                now_sydney = datetime.now(AEST_TZ)
-                today_str = now_sydney.strftime('%Y-%m-%d')  # Sydney date
-                current_time = now_sydney.time()
+                # Use AU timezone for all scheduler timing
+                now_au = datetime.now(AU_TZ)
+                today_str = now_au.strftime('%Y-%m-%d')  # AU date
+                current_time = now_au.time()
                 current_hour = current_time.hour
                 current_minute = current_time.minute
-                current_timestamp = now_sydney.isoformat()
+                current_timestamp = now_au.isoformat()
                 
                 # PRECISE 12PM CHECK - Only run at exactly 12:00-12:02 PM (narrower window)
                 # AND ensure we haven't already run today
@@ -1417,7 +1412,7 @@ No tips are generated on startup - only at the scheduled time."""
                 has_not_run_today = scheduler_status.get('last_noon_run') != today_str
                 
                 if is_noon_time and has_not_run_today:
-                    print(f"🎯 12 PM TRIGGER ACTIVATED - {now_sydney.strftime('%H:%M:%S AEST on %B %d, %Y')}")
+                    print(f"🎯 12 PM TRIGGER ACTIVATED - {now_au.strftime('%H:%M:%S %Z on %B %d, %Y')}")
                     print(f"📅 Generating tips for TODAY: {today_str}")
                     
                     try:
@@ -1427,7 +1422,7 @@ No tips are generated on startup - only at the scheduled time."""
                         # Send the tips
                         await send_tips_as_separate_messages(
                             tips, 
-                            title=f"� Daily Greyhound Tips - {now_sydney.strftime('%B %d, %Y')}", 
+                            title=f"🐾 Daily Greyhound Tips - {now_au.strftime('%B %d, %Y')}", 
                             mention_user=True
                         )
                         
@@ -1437,7 +1432,7 @@ No tips are generated on startup - only at the scheduled time."""
                         save_scheduler_status(scheduler_status)
                         
                         print(f"✅ Daily 12 PM tips sent successfully for {today_str}")
-                        print(f"📊 Next tips will be sent tomorrow at 12 PM Sydney time")
+                        print(f"📊 Next tips will be sent tomorrow at 12 PM {AU_TZ_NAME}")
                         
                     except Exception as e:
                         print(f"❌ Error during 12 PM tips generation: {str(e)}")
@@ -1446,7 +1441,7 @@ No tips are generated on startup - only at the scheduled time."""
                         try:
                             error_msg = f"""⚠️ **Error Generating Daily Tips**
 
-**Time:** {now_sydney.strftime('%H:%M AEST on %B %d, %Y')}
+**Time:** {now_au.strftime('%H:%M %Z on %B %d, %Y')}
 **Error:** {str(e)[:300]}
 
 The bot will attempt to generate tips again tomorrow at 12 PM."""
@@ -1458,17 +1453,17 @@ The bot will attempt to generate tips again tomorrow at 12 PM."""
                 # Debug output every 30 minutes only (reduced spam)
                 if current_minute in [0, 30]:
                     # Calculate time until next noon
-                    next_noon = now_sydney.replace(hour=12, minute=0, second=0, microsecond=0)
+                    next_noon = now_au.replace(hour=12, minute=0, second=0, microsecond=0)
                     if current_hour >= 12:
                         next_noon += timedelta(days=1)
                     
-                    time_until_noon = next_noon - now_sydney
+                    time_until_noon = next_noon - now_au
                     hours_until = int(time_until_noon.total_seconds() // 3600)
                     minutes_until = int((time_until_noon.total_seconds() % 3600) // 60)
                     
                     last_run = scheduler_status.get('last_noon_run', 'Never')
                     
-                    print(f"🕐 {now_sydney.strftime('%H:%M AEST')} - Next 12 PM run in {hours_until}h {minutes_until}m")
+                    print(f"🕐 {now_au.strftime('%H:%M %Z')} - Next 12 PM run in {hours_until}h {minutes_until}m")
                     print(f"📊 Last run: {last_run}")
                 
                 await asyncio.sleep(60)  # Check every minute
